@@ -27,7 +27,7 @@ class File:
         crc (:obj:`int`): CRC of the file. Used to check for corruptions.
         compressed_size (:obj:`int`): Compressed size of the file.
         uncompressed_size (:obj:`int`): Uncompressed size of the file.
-        contents (:obj:`str`): Decoded contents of the file. Default encoding is utf-8.
+        contents (:obj:`bytes`): Undecoded contents of the file.
     """
 
     file_name: str
@@ -38,21 +38,47 @@ class File:
     crc: int
     compressed_size: int
     uncompressed_size: int
-    contents: str | bytes
+    contents: bytes
 
-    def extract(self, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.'):
+    def extract(self, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', encoding: str = 'utf-8'):
+        """Extract single file to given ``path``. If not specified, extracts to current working directory.
+        If file couldn't be decoded, its byte representation will be extracted instead.
+        """
+
+        contents = self.peek(encoding)
         if not path.exists(__path):
             mkdir(__path)
         __path = path.join(__path, self.file_name.replace('/', '\\'))
+
         if not path.exists(__path) and self.file_name[-1] == '/':
+            # Create folder
             mkdir(__path)
+        elif isinstance(contents, str):
+            # Otherwise, write to file
+            with open(__path, 'w') as f:
+                f.write(contents)
         else:
-            if isinstance(self.contents, str):
-                with open(__path, 'w') as f:
-                    f.write(self.contents)
+            with open(__path, 'wb') as f:
+                f.write(contents)
+
+    def peek(self, encoding: str = 'utf-8', ignore_overflow: bool = False, char_limit: int = 8191) -> str | bytes:
+        """Decode file contents.
+
+        If ``ignore_overflow`` is set to False, content that exceeds ``char_limit`` characters (bytes) will be partially shown.
+        """
+
+        try:
+            content = io.BytesIO(self.contents).read().decode(encoding)
+        except ValueError:  # Decoding falied
+            content = io.BytesIO(self.contents).read()
+
+        if len(content) > char_limit and not ignore_overflow:
+            if isinstance(content, str):
+                return content[:char_limit // 2] + '... File too large to display'
             else:
-                with open(__path, 'wb') as f:
-                    f.write(self.contents)
+                return content[:char_limit // 32] + b'... File too large to display'
+        else:
+            return content
 
 
 @dataclass
@@ -92,9 +118,9 @@ class FileRaw:
         self.extra_field = file.read(self.extra_field_length)
         self.contents = file.read(self.compressed_size)
 
-    def decode(self, pwd: Optional[str], encoding):
+    def decode(self, pwd: Optional[str]):
 
-        if self.bit_flag[-1] == '0':
+        if self.bit_flag[0] == '0':
             encryption_method = 'Unencrypted'
 
         if self.compression_method == 0:
@@ -175,11 +201,6 @@ class FileRaw:
 
         crc = int.from_bytes(self.crc, 'little')
 
-        try:
-            contents = io.BytesIO(contents).read().decode(encoding)
-        except ValueError:  # Decoding falied
-            contents = io.BytesIO(contents).read()
-
         return File(
             self.file_name,
             self.version_needed_to_exctract,
@@ -198,12 +219,13 @@ class CDHeader:
     """Contents of Central Directory Header.
     See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT for full documentation.
     """
+
     version_made_by: bytes
     version_needed_to_exctract: int
     bit_flag: bytes
     compression: bytes
-    last_mod_time: time
-    last_mod_date: date
+    last_mod_time: Optional[time]
+    last_mod_date: Optional[date]
     crc: int
     compressed_size: int
     uncompressed_size: int
@@ -232,7 +254,7 @@ class CDHeader:
                                       ((last_mod_time << 1) & 0x3E) - 2)
             self.last_mod_date = date((last_mod_date >> 9) + 1980, (last_mod_date >> 5) & 0xF, last_mod_date & 0x1F)
         except ValueError:
-            last_mod_time = last_mod_date = None
+            self.last_mod_time = self.last_mod_date = None  # In case it's a folder
         crc = file.read(4)
         self.crc = int.from_bytes(crc, 'little')
         self.compressed_size = int.from_bytes(file.read(4), 'little')

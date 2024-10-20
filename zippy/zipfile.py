@@ -40,10 +40,9 @@ class ZipFile(Archive):
 
         ``f`` must be a filename, pathlike string or a binary data stream.
 
-        If file contents couldn't be decoded, initial stream of bytes will be used.
+        ``encoding`` is only used to decode filenames and comments. You may use different encoding to extract files.
 
-        Raises Exception if target file is damaged (either crc or number of file entries doesn't match)
-        and inbuild open function exceptions.
+        Raises Exception if target file is damaged and inbuild open function exceptions.
         """
 
         files: list[File] = []
@@ -60,7 +59,7 @@ class ZipFile(Archive):
             signature = f.read(4)
             if signature == b'PK\x03\x04':  # First check
                 raw_file = FileRaw(f, encoding)
-                files.append(raw_file.decode(pwd, encoding))
+                files.append(raw_file.decode(pwd))
             else:
                 raise Exception('file should be in .ZIP format.')
 
@@ -68,7 +67,7 @@ class ZipFile(Archive):
                 signature = f.read(4)
                 if signature == b'PK\x03\x04':  # Getting file headers
                     raw_file = FileRaw(f, encoding)
-                    files.append(raw_file.decode(pwd, encoding))
+                    files.append(raw_file.decode(pwd))
                 elif signature == b'PK\x01\x02':  # Getting central directory headers of fieles
                     header = CDHeader(f, encoding)
                     CD_headers.append(header)
@@ -87,5 +86,3 @@ class ZipFile(Archive):
                 raise Exception('file is corrupted or damaged.')
 
         return ZipFile(files, CD_headers, endof_cd)
-
-
