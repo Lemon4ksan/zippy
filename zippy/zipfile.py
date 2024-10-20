@@ -32,7 +32,7 @@ class ZipFile(Archive):
 
     @staticmethod
     def open(
-            f: str | PathLike[str] | PathLike[bytes] | BinaryIO,
+            f: int | str | bytes | PathLike[str] | PathLike[bytes] | BinaryIO,
             pwd: Optional[str] = None,
             encoding: str = 'utf-8'
     ) -> 'ZipFile':
@@ -49,7 +49,7 @@ class ZipFile(Archive):
         CD_headers: list[CDHeader] = []
         indirect: bool = False  # Binary stream is already initialised
 
-        if isinstance(f, str) or isinstance(f, PathLike):
+        if isinstance(f, (int, str, bytes, PathLike)):
             f: BinaryIO = open(f, 'rb')
             indirect = True
         elif not isinstance(f, BinaryIO):
@@ -60,6 +60,8 @@ class ZipFile(Archive):
             if signature == b'PK\x03\x04':  # First check
                 raw_file = FileRaw(f, encoding)
                 files.append(raw_file.decode(pwd))
+            elif signature == b'PK\x05\x06':
+                raise Exception('empty zip file.')
             else:
                 raise Exception('file should be in .ZIP format.')
 
@@ -73,6 +75,7 @@ class ZipFile(Archive):
                     CD_headers.append(header)
                 elif signature == b'PK\x05\06':  # End of centeral directory (stop reading)
                     endof_cd = CDEnd(f, encoding)
+                    break
                 else:
                     # print(signature)
                     break

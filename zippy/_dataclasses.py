@@ -8,6 +8,7 @@ import deflate
 import zstandard
 from zippy.utils import pwexplode
 from zippy.utils import LZ77
+from zippy.utils import ZipEncrypt
 
 from dataclasses import dataclass
 from datetime import date, time, datetime
@@ -31,7 +32,7 @@ class File:
     """
 
     file_name: str
-    version_needed_to_exctract: str
+    version_needed_to_exctract: int
     encryption_method: str
     compression_method: str
     last_mod_time: datetime
@@ -62,10 +63,13 @@ class File:
                 f.write(contents)
 
     def peek(self, encoding: str = 'utf-8', ignore_overflow: bool = False, char_limit: int = 8191) -> str | bytes:
-        """Decode file contents.
+        """Decode file contents. If content could not be decoded, its byte representation will be used instead.
 
         If ``ignore_overflow`` is set to False, content that exceeds ``char_limit`` characters (bytes) will be partially shown.
         """
+
+        if self.file_name[-1] == '/':
+            return 'Folder'
 
         try:
             content = io.BytesIO(self.contents).read().decode(encoding)
@@ -74,9 +78,9 @@ class File:
 
         if len(content) > char_limit and not ignore_overflow:
             if isinstance(content, str):
-                return content[:char_limit // 2] + '... File too large to display'
+                return content[:char_limit // 2] + ' |...| File too large to display'
             else:
-                return content[:char_limit // 32] + b'... File too large to display'
+                return content[:char_limit // 32] + b' |...| File too large to display'
         else:
             return content
 
@@ -86,7 +90,7 @@ class FileRaw:
     """File extracted from archive. It's uncompressed, not decrypted (if it was)
      and contains data fields that user doesn't need."""
 
-    version_needed_to_exctract: str
+    version_needed_to_exctract: int
     bit_flag: str
     compression_method: int
     last_mod_time: int
@@ -101,10 +105,10 @@ class FileRaw:
     contents: bytes
 
     def __init__(self, file: BinaryIO, encoding: str):
-        version = [str(byte) for byte in file.read(2)]
-        self.version_needed_to_exctract = str(f'{str(version[0])[0]}.{str(version[0])[1]}')
-        if version[1] != '0':  # This byte is unused
-            self.version_needed_to_exctract += f'({str(version[1])[0]}.{str(version[1])[1]})'
+        version = [byte for byte in file.read(2)]
+        self.version_needed_to_exctract = version[0]
+        if version[1] != 0:  # This byte is unused
+            raise Exception('Unknown version value')
         self.bit_flag = "".join(format(bit, 'b') for bit in file.read(2))
         self.compression_method = int.from_bytes(file.read(2), 'little')
         self.last_mod_time = int.from_bytes(file.read(2), 'little')
@@ -122,6 +126,28 @@ class FileRaw:
 
         if self.bit_flag[0] == '0':
             encryption_method = 'Unencrypted'
+        else:
+            encryption_method = 'ZipCrypto'
+            zd = ZipEncrypt.ZipDecrypter(pwd)
+            decrypted_content = list(map(zd, self.contents))
+            decryption_header = decrypted_content[:13]
+            # Each encrypted file has an extra 12 bytes stored at the start
+            # of the data area defining the encryption header for that file.  The
+            # encryption header is originally set to random values, and then
+            # itself encrypted, using three, 32-bit keys.
+            if self.version_needed_to_exctract >= 20:
+                if int.from_bytes(decryption_header[-2], 'little') != self.crc[-1]:
+                    # After the header is decrypted,  the last 1 or 2 bytes in Buffer
+                    # SHOULD be the high-order word/byte of the CRC for the file being
+                    # decrypted, stored in Intel low-byte/high-byte order.  Versions of
+                    # PKZIP prior to 2.0 used a 2 byte CRC check; a 1 byte CRC check is
+                    # used on versions after 2.0.  This can be used to test if the password
+                    # supplied is correct or not.
+
+                    # ^ This is a lie, we're comparing only second last decryption_header byte with last crc byte
+                    raise Exception('given password is incorrect.')
+
+            self.contents = b"".join(decrypted_content[12:])
 
         if self.compression_method == 0:
             compression_method = 'Stored'
@@ -196,8 +222,7 @@ class FileRaw:
             last_mod_date = date((self.last_mod_date >> 9) + 1980, (self.last_mod_date >> 5) & 0xF,
                                  self.last_mod_date & 0x1F)
         except ValueError:
-            last_mod_time = None
-            last_mod_date = None
+            last_mod_time = last_mod_date = None
 
         crc = int.from_bytes(self.crc, 'little')
 
@@ -255,8 +280,7 @@ class CDHeader:
             self.last_mod_date = date((last_mod_date >> 9) + 1980, (last_mod_date >> 5) & 0xF, last_mod_date & 0x1F)
         except ValueError:
             self.last_mod_time = self.last_mod_date = None  # In case it's a folder
-        crc = file.read(4)
-        self.crc = int.from_bytes(crc, 'little')
+        self.crc = int.from_bytes(file.read(4), 'little')
         self.compressed_size = int.from_bytes(file.read(4), 'little')
         self.uncompressed_size = int.from_bytes(file.read(4), 'little')
         self.file_name_length = int.from_bytes(file.read(2), 'little')
@@ -276,6 +300,7 @@ class CDEnd:
     """Contents of End of Central Directory.
     See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT for full documentation.
     """
+
     disk_num: int
     disk_num_CD: int
     total_entries: int
