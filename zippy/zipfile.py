@@ -1,7 +1,10 @@
-from ._dataclasses import File, FileRaw, CDHeader, CDEnd
-from ._base_archive import Archive
 from typing import BinaryIO, Optional, Self
 from os import PathLike
+
+from ._zipfile import FileRaw, CDHeader, CDEnd
+from ._base_classes import Archive, File
+from .exceptions import *
+
 
 class ZipFile(Archive):
     """Class representing the zip file and its contents.
@@ -42,7 +45,7 @@ class ZipFile(Archive):
 
         ``encoding`` is only used to decode filenames and comments. You may use different encoding to extract files.
 
-        Raises Exception if target file is damaged and inbuild open function exceptions.
+        Raises BadFile exception if target file is damaged and inbuild open function exceptions.
         """
 
         files: list[File] = []
@@ -53,7 +56,7 @@ class ZipFile(Archive):
             f: BinaryIO = open(f, 'rb')
             indirect = True
         elif not isinstance(f, BinaryIO):
-            raise TypeError(f'expected str, bytes or os.PathLike object, not {type(f).__name__}.')
+            raise TypeError(f'Expected int, str, bytes or os.PathLike object, not {type(f).__name__}.')
 
         try:
             signature = f.read(4)
@@ -61,9 +64,9 @@ class ZipFile(Archive):
                 raw_file = FileRaw(f, encoding)
                 files.append(raw_file.decode(pwd))
             elif signature == b'PK\x05\x06':
-                raise Exception('empty zip file.')
+                raise BadFile('Empty zip file.')
             else:
-                raise Exception('file should be in .ZIP format.')
+                raise BadFile('File should be in .ZIP format.')
 
             while True:
                 signature = f.read(4)
@@ -86,6 +89,6 @@ class ZipFile(Archive):
         # Making sure zip file is not damaged
         for file, header in zip(files, CD_headers):
             if file.crc != header.crc:
-                raise Exception('file is corrupted or damaged.')
+                raise BadFile('File is corrupted or damaged.')
 
         return ZipFile(files, CD_headers, endof_cd)

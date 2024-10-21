@@ -1,4 +1,7 @@
-import io
+from dataclasses import dataclass
+from datetime import date, time, datetime
+from typing import BinaryIO, Optional
+
 import xz
 import mp3
 import bz2
@@ -6,84 +9,12 @@ import bz2
 # import pyppmd
 import deflate
 import zstandard
-from zippy.utils import pwexplode
-from zippy.utils import LZ77
-from zippy.utils import ZipEncrypt
 
-from dataclasses import dataclass
-from datetime import date, time, datetime
-from typing import BinaryIO, Optional
-from os import PathLike, mkdir, path
-
-@dataclass
-class File:
-    """Clean representation of the file.
-
-    Attributes:
-        file_name (:obj:`str`): Name of the file.
-        version_needed_to_exctract (:obj:`str`): Minimal version of zip required to unpack.
-        encryption_method (:obj:`str`): Name of the encryption method. Unencrypted if none.
-        compression_method (:obj:`str`): Name of the compression method. Stored if none.
-        last_mod_time (:class:`datetime`): Datetime of last modification of the file.
-        crc (:obj:`int`): CRC of the file. Used to check for corruptions.
-        compressed_size (:obj:`int`): Compressed size of the file.
-        uncompressed_size (:obj:`int`): Uncompressed size of the file.
-        contents (:obj:`bytes`): Undecoded contents of the file.
-    """
-
-    file_name: str
-    version_needed_to_exctract: int
-    encryption_method: str
-    compression_method: str
-    last_mod_time: datetime
-    crc: int
-    compressed_size: int
-    uncompressed_size: int
-    contents: bytes
-
-    def extract(self, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', encoding: str = 'utf-8'):
-        """Extract single file to given ``path``. If not specified, extracts to current working directory.
-        If file couldn't be decoded, its byte representation will be extracted instead.
-        """
-
-        contents = self.peek(encoding)
-        if not path.exists(__path):
-            mkdir(__path)
-        __path = path.join(__path, self.file_name.replace('/', '\\'))
-
-        if not path.exists(__path) and self.file_name[-1] == '/':
-            # Create folder
-            mkdir(__path)
-        elif isinstance(contents, str):
-            # Otherwise, write to file
-            with open(__path, 'w') as f:
-                f.write(contents)
-        else:
-            with open(__path, 'wb') as f:
-                f.write(contents)
-
-    def peek(self, encoding: str = 'utf-8', ignore_overflow: bool = False, char_limit: int = 8191) -> str | bytes:
-        """Decode file contents. If content could not be decoded, its byte representation will be used instead.
-
-        If ``ignore_overflow`` is set to False, content that exceeds ``char_limit`` characters (bytes) will be partially shown.
-        """
-
-        if self.file_name[-1] == '/':
-            return 'Folder'
-
-        try:
-            content = io.BytesIO(self.contents).read().decode(encoding)
-        except ValueError:  # Decoding falied
-            content = io.BytesIO(self.contents).read()
-
-        if len(content) > char_limit and not ignore_overflow:
-            if isinstance(content, str):
-                return content[:char_limit // 2] + ' |...| File too large to display'
-            else:
-                return content[:char_limit // 32] + b' |...| File too large to display'
-        else:
-            return content
-
+from .utils import pwexplode
+from .utils import LZ77
+from .utils import ZipEncrypt
+from ._base_classes import File
+from .exceptions import *
 
 @dataclass
 class FileRaw:
@@ -145,7 +76,7 @@ class FileRaw:
                     # supplied is correct or not.
 
                     # ^ This is a lie, we're comparing only second last decryption_header byte with last crc byte
-                    raise Exception('given password is incorrect.')
+                    raise WrongPassword('given password is incorrect.')
 
             self.contents = b"".join(decrypted_content[12:])
 
@@ -153,11 +84,11 @@ class FileRaw:
             compression_method = 'Stored'
             contents = self.contents
         elif self.compression_method in range(1, 6):
-            raise NotImplemented('Shrinking and Reducing are no longer supported.')
+            raise NotImplemented('Shrinking and Reducing are not implemented yet.')
         elif self.compression_method == 6:
-            raise NotImplemented('Legacy Implode is no longer supported. Use PKWARE Data Compression Library Imploding instead.')
+            raise Deprecated('Legacy Implode is no longer supported. Use PKWARE Data Compression Library Imploding instead.')
         elif self.compression_method == 7:
-            raise NotImplemented('Tokenizing is not used by PKZIP.')
+            raise Deprecated('Tokenizing is not used by PKZIP.')
         elif self.compression_method == 8:
             compression_method = 'Deflate'
             contents = deflate.deflate_decompress(self.contents, self.uncompressed_size)
@@ -168,31 +99,31 @@ class FileRaw:
             compression_method = 'PKWARE Data Compression Library Imploding'
             contents = pwexplode.explode(self.contents)  # Untested
         elif self.compression_method == 11:
-            raise ValueError('Compression method 11 is reserved.')
+            raise ReservedValue('Compression method 11 is reserved.')
         elif self.compression_method == 12:
             compression_method = 'BZIP2'
             contents = bz2.decompress(self.contents)
         elif self.compression_method == 13:
-            raise ValueError('Compression method 13 is reserved.')
+            raise ReservedValue('Compression method 13 is reserved.')
         elif self.compression_method == 14:
             # eos = self.bit_flag[-2]
             # compression_method = 'LZMA'
             # contents = lzma.decompress(self.contents, ???)  # Doesn't work for some reason.
             # Also don't know how to make it to use EOS.
-            raise NotImplemented('LZMA compression is not implemented yet.')
+            raise NotImplementedError('LZMA compression is not implemented yet.')
         elif self.compression_method == 15:
-            raise ValueError('Compression method 15 is reserved.')
+            raise ReservedValue('Compression method 15 is reserved.')
         elif self.compression_method == 16:  # can't find this
-            raise NotImplemented('IBM z/OS CMPSC Compression is not implemented.')
+            raise NotImplementedError('IBM z/OS CMPSC Compression is not implemented.')
         elif self.compression_method == 17:
-            raise ValueError('Compression method 17 is reserved.')
+            raise ReservedValue('Compression method 17 is reserved.')
         elif self.compression_method == 18:  # can't find this, somebody uses it?
-            raise NotImplemented('IBM TERSE is not implemented.')
+            raise NotImplementedError('IBM TERSE is not implemented.')
         elif self.compression_method == 19:
             compression_method = 'LZ77'
             contents = LZ77.decompress(self.contents)  # Untested
         elif self.compression_method == 20:
-            raise NotImplemented('Method 20 is deprecated. Use Zstandart compression instead.')
+            raise Deprecated('Method 20 is deprecated. Use Zstandart compression instead.')
         elif self.compression_method == 93:
             compression_method = 'Zstandart'
             contents = zstandard.decompress(self.contents)
@@ -203,16 +134,16 @@ class FileRaw:
             compression_method = 'XZ'
             contents = xz.decompress(self.contents)
         elif self.compression_method == 96:
-            raise NotImplemented('JPEG compression is not implemented yet.')
+            raise NotImplementedError('JPEG compression is not implemented yet.')
         elif self.compression_method == 97:
-            raise NotImplemented('WavPack compression is not implemented yet.')
+            raise NotImplementedError('WavPack compression is not implemented yet.')
         elif self.compression_method == 98:
             # compression_method = 'PPMd'  # Docs says that only version I, Rev 1 of PPMd is supported
             # maybe that's the reason it doesn't work
             # contents = pyppmd.decompress(self.contents, mem_size=self.uncompressed_size)
-            raise NotImplemented('PPMd compression is not implemented yet.')
+            raise NotImplementedError('PPMd compression is not implemented yet.')
         elif self.compression_method == 99:  # What is this??
-            raise NotImplemented('AE-x encryption marker compression is not implemented yet.')
+            raise NotImplementedError('AE-x encryption marker is not implemented yet.')
 
         # This conversion is based on java8 source code.
         # Some precision is lost, but I can't find more appropriate method of doing this.
@@ -279,7 +210,7 @@ class CDHeader:
                                       ((last_mod_time << 1) & 0x3E) - 2)
             self.last_mod_date = date((last_mod_date >> 9) + 1980, (last_mod_date >> 5) & 0xF, last_mod_date & 0x1F)
         except ValueError:
-            self.last_mod_time = self.last_mod_date = None  # In case it's a folder
+            self.last_mod_time = self.last_mod_date = None  # In case it's a folder (usually) without mod time
         self.crc = int.from_bytes(file.read(4), 'little')
         self.compressed_size = int.from_bytes(file.read(4), 'little')
         self.uncompressed_size = int.from_bytes(file.read(4), 'little')
