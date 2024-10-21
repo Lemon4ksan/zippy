@@ -38,7 +38,11 @@ class File:
         contents = self.peek(encoding)
         if not path.exists(__path):
             mkdir(__path)
-        __path = path.join(__path, self.file_name.replace('/', '\\'))
+        __path = path.join(__path, self.file_name.replace('/', '\\'))  # get final file path
+
+        if path.exists(__path) and path.isdir(__path):
+            # Folder already extracted
+            return
 
         if not path.exists(__path) and self.file_name[-1] == '/':
             # Create folder
