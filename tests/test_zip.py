@@ -27,6 +27,10 @@ class TestCase(unittest.TestCase):
 
         self.assertRaises(WrongPassword, lambda: ZipFile.open('ZipEncrypted.zip', 'wrongpassword'))
 
+    def test_exctract(self):  # This test should finish without exceptions (os exceptions mainly)
+        with ZipFile.open('folders.zip') as z:
+            z.extract_all()
+
 
 if __name__ == '__main__':
     unittest.main()
