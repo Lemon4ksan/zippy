@@ -65,7 +65,7 @@ class File:
         ``char_limit`` characters (bytes) will be partially shown.
         """
 
-        if self.file_name[-1] == '/':
+        if self.is_dir:
             return 'Folder'
 
         try:
@@ -119,6 +119,6 @@ class Archive:
         """
         files = []
         for file in self.files:
-            if file.file_name[-1] != '/':
+            if not file.is_dir:
                 files.append((file.file_name, file.peek(encoding, ignore_overflow, char_limit)))
         return files
