@@ -3,9 +3,11 @@ from os import PathLike, path
 
 from zlib import crc32
 
+from .._base_classes import Archive, File
 from ._zipfile import FileRaw, CDHeader, CDEnd
-from ._base_classes import Archive, File
 from .exceptions import *
+from .encryptions import *
+from .compressions import *
 
 
 class NewZipFile:
@@ -28,7 +30,7 @@ class NewZipFile:
             fn: str,
             fd: str | bytes | TextIO | BinaryIO,
             fp: str | PathLike[str] = '.',
-            compression: str = 'Stored',
+            compression: str = STORED,
             encoding: str = 'utf-8',
             comment: str = ''
     ):
@@ -41,6 +43,8 @@ class NewZipFile:
         ``fp`` is file's path inside zip. '.' represents root. Every path should start from root.
 
         ``encoding`` is encoding in wich file's data will be encoded. It may vary from the initial encoding.
+
+        Additional ``comment`` can be applied to the file.
         """
 
         if fp not in self.files:
@@ -107,7 +111,12 @@ class NewZipFile:
         self.files[fp].append(file)
         self.cd_headers[fp].append(cd_header)
 
-    def save(self, fn: str, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.'):
+    def save(self, fn: str, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', comment: str = ''):
+        """Save new zip file with name ``fn`` at given ``path``.
+
+        Additional ``comment`` can be applied to the file.
+        """
+
         __path = path.join(__path, fn)
         endof_cd = CDEnd(  # This entire thing is a placeholder (it doesn't matter when unpacking)
             disk_num=0,
@@ -117,7 +126,7 @@ class NewZipFile:
             sizeof_CD=0,
             offset=0,
             comment_length=0,
-            comment=''
+            comment=comment
         )
 
         with open(__path, 'wb') as z:
@@ -216,7 +225,7 @@ class ZipFile(Archive):
         return ZipFile(files, CD_headers, endof_cd)
 
     @staticmethod
-    def new(pwd: Optional[str] = None, encoding: str = 'utf-8', encryption: str = 'Unencrypted') -> NewZipFile:
+    def new(pwd: Optional[str] = None, encoding: str = 'utf-8', encryption: str = UNECNCRYPTED) -> NewZipFile:
         """Initialize creation of new zip file.
 
         ``encoding`` is only used to decode filenames and comments. You may use different encoding on files.
