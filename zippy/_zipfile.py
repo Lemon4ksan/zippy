@@ -22,11 +22,11 @@ class FileRaw:
      and contains data fields that user doesn't need."""
 
     version_needed_to_exctract: int
-    bit_flag: str
+    bit_flag: bytes
     compression_method: int
     last_mod_time: int
     last_mod_date: int
-    crc: bytes
+    crc: int
     compressed_size: int
     uncompressed_size: int
     file_name_length: int
@@ -35,27 +35,46 @@ class FileRaw:
     extra_field: bytes
     contents: bytes
 
-    def __init__(self, file: BinaryIO, encoding: str):
+    @classmethod
+    def __init_raw__(cls, file: BinaryIO, encoding: str):
         version = [byte for byte in file.read(2)]
-        self.version_needed_to_exctract = version[0]
+        version_needed_to_exctract = version[0]
         if version[1] != 0:  # This byte is unused
-            raise Exception('Unknown version value')
-        self.bit_flag = "".join(format(bit, 'b') for bit in file.read(2))
-        self.compression_method = int.from_bytes(file.read(2), 'little')
-        self.last_mod_time = int.from_bytes(file.read(2), 'little')
-        self.last_mod_date = int.from_bytes(file.read(2), 'little')
-        self.crc = file.read(4)
-        self.compressed_size = int.from_bytes(file.read(4), 'little')
-        self.uncompressed_size = int.from_bytes(file.read(4), 'little')
-        self.file_name_length = int.from_bytes(file.read(2), 'little')
-        self.extra_field_length = int.from_bytes(file.read(2), 'little')
-        self.file_name = file.read(self.file_name_length).decode(encoding)
-        self.extra_field = file.read(self.extra_field_length)
-        self.contents = file.read(self.compressed_size)
+            raise BadFile('Unknown version value')
+        bit_flag = file.read(2)
+        compression_method = int.from_bytes(file.read(2), 'little')
+        last_mod_time = int.from_bytes(file.read(2), 'little')
+        last_mod_date = int.from_bytes(file.read(2), 'little')
+        crc = int.from_bytes(file.read(4), 'little')
+        compressed_size = int.from_bytes(file.read(4), 'little')
+        uncompressed_size = int.from_bytes(file.read(4), 'little')
+        file_name_length = int.from_bytes(file.read(2), 'little')
+        extra_field_length = int.from_bytes(file.read(2), 'little')
+        file_name = file.read(file_name_length).decode(encoding)
+        extra_field = file.read(extra_field_length)
+        contents = file.read(compressed_size)
 
-    def decode(self, pwd: Optional[str]):
+        return cls(
+            version_needed_to_exctract,
+            bit_flag,
+            compression_method,
+            last_mod_time,
+            last_mod_date,
+            crc,
+            compressed_size,
+            uncompressed_size,
+            file_name_length,
+            extra_field_length,
+            file_name,
+            extra_field,
+            contents
+        )
 
-        if self.bit_flag[0] == '0':
+    def decode(self, pwd: Optional[str]) -> File:
+        
+        bit_flag = "".join(format(bit, 'b') for bit in self.bit_flag)
+        
+        if bit_flag[0] == '0':
             encryption_method = 'Unencrypted'
         else:
             encryption_method = 'ZipCrypto'
@@ -67,7 +86,7 @@ class FileRaw:
             # encryption header is originally set to random values, and then
             # itself encrypted, using three, 32-bit keys.
             if self.version_needed_to_exctract >= 20:
-                if int.from_bytes(decryption_header[-2], 'little') != self.crc[-1]:
+                if int.from_bytes(decryption_header[-2], 'little') != self.crc.to_bytes(4, 'little')[-1]:
                     # After the header is decrypted,  the last 1 or 2 bytes in Buffer
                     # SHOULD be the high-order word/byte of the CRC for the file being
                     # decrypted, stored in Intel low-byte/high-byte order.  Versions of
@@ -106,7 +125,7 @@ class FileRaw:
         elif self.compression_method == 13:
             raise ReservedValue('Compression method 13 is reserved.')
         elif self.compression_method == 14:
-            # eos = self.bit_flag[-2]
+            # eos = bit_flag[-2]
             # compression_method = 'LZMA'
             # contents = lzma.decompress(self.contents, ???)  # Doesn't work for some reason.
             # Also don't know how to make it to use EOS.
@@ -155,19 +174,34 @@ class FileRaw:
         except ValueError:
             last_mod_time = last_mod_date = None
 
-        crc = int.from_bytes(self.crc, 'little')
-
         return File(
             self.file_name,
             self.version_needed_to_exctract,
             encryption_method,
             compression_method,
             datetime.combine(last_mod_date, last_mod_time) if last_mod_time is not None else None,
-            crc,
+            self.crc,
             self.compressed_size,
             self.uncompressed_size,
             contents
         )
+
+    def encode(self, encoding: str) -> bytes:
+        byte_str: bytes = b''
+        byte_str += self.version_needed_to_exctract.to_bytes(2, 'little')
+        byte_str += self.bit_flag
+        byte_str += self.compression_method.to_bytes(2, 'little')
+        byte_str += self.last_mod_time.to_bytes(2, 'little')
+        byte_str += self.last_mod_date.to_bytes(2, 'little')
+        byte_str += self.crc.to_bytes(4, 'little')
+        byte_str += self.compressed_size.to_bytes(4, 'little')
+        byte_str += self.uncompressed_size.to_bytes(4, 'little')
+        byte_str += self.file_name_length.to_bytes(2, 'little')
+        byte_str += self.extra_field_length.to_bytes(2, 'little')
+        byte_str += self.file_name.encode(encoding)
+        byte_str += self.extra_field
+        byte_str += self.contents
+        return byte_str
 
 
 @dataclass
@@ -176,12 +210,12 @@ class CDHeader:
     See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT for full documentation.
     """
 
-    version_made_by: bytes
+    version_made_by: int
     version_needed_to_exctract: int
     bit_flag: bytes
-    compression: bytes
-    last_mod_time: Optional[time]
-    last_mod_date: Optional[date]
+    compression_method: int
+    last_mod_time: int
+    last_mod_date: int
     crc: int
     compressed_size: int
     uncompressed_size: int
@@ -196,35 +230,72 @@ class CDHeader:
     extra_field: bytes
     file_comment: str
 
-    def __init__(self, file: BinaryIO, encoding: str):
-        self.version_made_by = file.read(2)
-        self.version_needed_to_exctract = int.from_bytes(file.read(2), 'little')
-        self.bit_flag = file.read(2)
-        self.compression = file.read(2)
+    @classmethod
+    def __init_raw__(cls, file: BinaryIO, encoding: str):
+        version_made_by = int.from_bytes(file.read(2), 'little')
+        version_needed_to_exctract = int.from_bytes(file.read(2), 'little')
+        bit_flag = file.read(2)
+        compression_method = int.from_bytes(file.read(2), 'little')
         last_mod_time = int.from_bytes(file.read(2), 'little')
         last_mod_date = int.from_bytes(file.read(2), 'little')
-        # This conversion is based on java8 source code.
-        # Some precision is lost, but I can't find more appropriate method of doing this.
-        try:
-            self.last_mod_time = time((last_mod_time >> 11) & 0x1F, (last_mod_time >> 5) & 0x3F,
-                                      ((last_mod_time << 1) & 0x3E) - 2)
-            self.last_mod_date = date((last_mod_date >> 9) + 1980, (last_mod_date >> 5) & 0xF, last_mod_date & 0x1F)
-        except ValueError:
-            self.last_mod_time = self.last_mod_date = None  # In case it's a folder (usually) without mod time
-        self.crc = int.from_bytes(file.read(4), 'little')
-        self.compressed_size = int.from_bytes(file.read(4), 'little')
-        self.uncompressed_size = int.from_bytes(file.read(4), 'little')
-        self.file_name_length = int.from_bytes(file.read(2), 'little')
-        self.extra_field_length = int.from_bytes(file.read(2), 'little')
-        self.file_comment_length = int.from_bytes(file.read(2), 'little')
-        self.disk_number_start = int.from_bytes(file.read(2), 'little')
-        self.internal_file_attrs = file.read(2)
-        self.external_file_attrs = file.read(4)
-        self.local_header_relative_offset = int.from_bytes(file.read(4), 'little')
-        self.file_name = file.read(self.file_name_length).decode(encoding)
-        self.extra_field = file.read(self.extra_field_length)
-        self.file_comment = file.read(self.file_comment_length).decode(encoding)
+        crc = int.from_bytes(file.read(4), 'little')
+        compressed_size = int.from_bytes(file.read(4), 'little')
+        uncompressed_size = int.from_bytes(file.read(4), 'little')
+        file_name_length = int.from_bytes(file.read(2), 'little')
+        extra_field_length = int.from_bytes(file.read(2), 'little')
+        file_comment_length = int.from_bytes(file.read(2), 'little')
+        disk_number_start = int.from_bytes(file.read(2), 'little')
+        internal_file_attrs = file.read(2)
+        external_file_attrs = file.read(4)
+        local_header_relative_offset = int.from_bytes(file.read(4), 'little')
+        file_name = file.read(file_name_length).decode(encoding)
+        extra_field = file.read(extra_field_length)
+        file_comment = file.read(file_comment_length).decode(encoding)
 
+        return cls(
+            version_made_by,
+            version_needed_to_exctract,
+            bit_flag,
+            compression_method,
+            last_mod_time,
+            last_mod_date,
+            crc,
+            compressed_size,
+            uncompressed_size,
+            file_name_length,
+            extra_field_length,
+            file_comment_length,
+            disk_number_start,
+            internal_file_attrs,
+            external_file_attrs,
+            local_header_relative_offset,
+            file_name,
+            extra_field,
+            file_comment
+        )
+
+    def encode(self, encoding: str) -> bytes:
+        byte_str: bytes = b''
+        byte_str += self.version_made_by.to_bytes(2, 'little')
+        byte_str += self.version_needed_to_exctract.to_bytes(2, 'little')
+        byte_str += self.bit_flag
+        byte_str += self.compression_method.to_bytes(2, 'little')
+        byte_str += self.last_mod_time.to_bytes(2, 'little')
+        byte_str += self.last_mod_date.to_bytes(2, 'little')
+        byte_str += self.crc.to_bytes(4, 'little')
+        byte_str += self.compressed_size.to_bytes(4, 'little')
+        byte_str += self.uncompressed_size.to_bytes(4, 'little')
+        byte_str += self.file_name_length.to_bytes(2, 'little')
+        byte_str += self.extra_field_length.to_bytes(2, 'little')
+        byte_str += self.file_comment_length.to_bytes(2, 'little')
+        byte_str += self.disk_number_start.to_bytes(2, 'little')
+        byte_str += self.internal_file_attrs
+        byte_str += self.external_file_attrs
+        byte_str += self.local_header_relative_offset.to_bytes(4, 'little')
+        byte_str += self.file_name.encode(encoding)
+        byte_str += self.extra_field
+        byte_str += self.file_comment.encode(encoding)
+        return byte_str
 
 @dataclass
 class CDEnd:
@@ -241,12 +312,36 @@ class CDEnd:
     comment_length: int
     comment: str
 
-    def __init__(self, file: BinaryIO, encoding: str):
-        self.disk_num = int.from_bytes(file.read(2), 'little')
-        self.disk_num_CD = int.from_bytes(file.read(2), 'little')
-        self.total_entries = int.from_bytes(file.read(2), 'little')
-        self.total_CD_entries = int.from_bytes(file.read(2), 'little')
-        self.sizeof_CD = int.from_bytes(file.read(4), 'little')
-        self.offset = int.from_bytes(file.read(4), 'little')
-        self.comment_length = int.from_bytes(file.read(2), 'little')
-        self.comment = file.read(self.comment_length).decode(encoding)
+    @classmethod
+    def __init_raw__(cls, file: BinaryIO, encoding: str):
+        disk_num = int.from_bytes(file.read(2), 'little')
+        disk_num_CD = int.from_bytes(file.read(2), 'little')
+        total_entries = int.from_bytes(file.read(2), 'little')
+        total_CD_entries = int.from_bytes(file.read(2), 'little')
+        sizeof_CD = int.from_bytes(file.read(4), 'little')
+        offset = int.from_bytes(file.read(4), 'little')
+        comment_length = int.from_bytes(file.read(2), 'little')
+        comment = file.read(comment_length).decode(encoding)
+
+        return cls(
+            disk_num,
+            disk_num_CD,
+            total_entries,
+            total_CD_entries,
+            sizeof_CD,
+            offset,
+            comment_length,
+            comment
+        )
+
+    def encode(self, encoding: str) -> bytes:
+        byte_str: bytes = b''
+        byte_str += self.disk_num.to_bytes(2, 'little')
+        byte_str += self.disk_num_CD.to_bytes(2, 'little')
+        byte_str += self.total_entries.to_bytes(2, 'little')
+        byte_str += self.total_CD_entries.to_bytes(2, 'little')
+        byte_str += self.sizeof_CD.to_bytes(4, 'little')
+        byte_str += self.offset.to_bytes(4, 'little')
+        byte_str += self.comment_length.to_bytes(2, 'little')
+        byte_str += self.comment.encode(encoding)
+        return byte_str
