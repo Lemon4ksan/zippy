@@ -10,6 +10,7 @@ class File:
 
     Attributes:
         file_name (:obj:`str`): Name of the file.
+        is_dir (:obj:`bool`): True if file is a directory.
         version_needed_to_exctract (:obj:`int`): Minimal version of zip required to unpack.
         encryption_method (:obj:`str`): Name of the encryption method. Unencrypted if none.
         compression_method (:obj:`str`): Name of the compression method. Stored if none.
@@ -21,6 +22,7 @@ class File:
     """
 
     file_name: str
+    is_dir: bool
     version_needed_to_exctract: int
     encryption_method: str
     compression_method: str
@@ -44,7 +46,7 @@ class File:
             # Folder already extracted
             return
 
-        if not path.exists(__path) and self.file_name[-1] == '/':
+        if not path.exists(__path) and self.is_dir:
             # Create folder
             mkdir(__path)
         elif isinstance(contents, str):

@@ -80,6 +80,7 @@ class FileRaw:
 
         return File(
             self.file_name,
+            self.version_needed_to_exctract == 20,
             self.version_needed_to_exctract,
             encryption_method,
             compression_method,
