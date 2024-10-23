@@ -7,6 +7,7 @@ from zlib import crc32
 
 from .._base_classes import Archive, File
 from ._zipfile import FileRaw, CDHeader, CDEnd
+from ._zip_algorythms import compress
 from .exceptions import *
 from .encryptions import *
 from .compressions import *
@@ -33,6 +34,7 @@ class NewZipFile:
             fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO,
             fp: str | PathLike[str] = '.',
             compression: str = STORED,
+            level: str = NORMAL,
             *,
             last_mod_time: Optional[datetime] = None,
             encoding: str = 'utf-8',
@@ -43,7 +45,7 @@ class NewZipFile:
         ``fn`` is filename. It should be encoded in the same encoding specified in file creation.
 
         ``fd`` is file's data. It can be string, bytes object, os.PathLike, text and binary stream.
-        If ``fd`` is not os.PathLike, last_mod_date must be provided, if not, ``datetime.now()`` will be used instead.
+        If it's not os.PathLike, ``last_mod_date`` must be provided, if not, ``datetime.now()`` will be used instead.
 
         ``fp`` is file's path inside zip. '.' represents root. Every path should start from root.
 
@@ -58,9 +60,13 @@ class NewZipFile:
             self.files.update({fp: []})
 
         if isinstance(fd, PathLike):
-            last_mod_time = path.getmtime()
+            last_mod_time = datetime.fromtimestamp(path.getmtime())
         elif last_mod_time is None:
             last_mod_time = datetime.now()
+
+        # This conversion is based on java8 source code
+        time = ((last_mod_time.year - 1980) << 25 | (last_mod_time.month + 1) << 21 | last_mod_time.day << 16 |
+                last_mod_time.hour << 11 | last_mod_time.minute << 5 | last_mod_time.second >> 1)
 
         if isinstance(fd, bytes):
             crc: int = crc32(fd)
@@ -74,7 +80,7 @@ class NewZipFile:
             raise TypeError(f'Expected file data to be str, bytes, io.TextIO or io.BinaryIO, not {type(fd).__name__}')
 
         bit_flag: list[str] = list('00000000')
-        if self.encryption != UNECNCRYPTED:
+        if self.encryption != UNENCRYPTED:
             bit_flag[0] = '1'
         bit_flag: bytes = int("".join(bit_flag), 2).to_bytes(2, 'little')
 
@@ -111,18 +117,20 @@ class NewZipFile:
         else:
             v = 10
 
+        fd = compress(compression_method, level, fd)
+
         file = FileRaw(
             version_needed_to_exctract=v,
             bit_flag=bit_flag,
             compression_method=compression_method,
-            last_mod_time=0,  # placeholder
-            last_mod_date=0,  # placeholder
+            last_mod_time=time.to_bytes(4, 'little')[:2],
+            last_mod_date=time.to_bytes(4, 'little')[2:],
             crc=crc,
-            compressed_size=uncompressed_size,  # placeholder
+            compressed_size=len(fd),
             uncompressed_size=uncompressed_size,
-            file_name_length=len(fn.encode(self.encoding)),
+            filename_length=len(fn.encode(self.encoding)),
             extra_field_length=0,  # placeholder
-            file_name=fn,
+            filename=fn,
             extra_field=b'',  # palceholder
             contents=fd
         )
@@ -146,24 +154,24 @@ class NewZipFile:
 
         cd_header = CDHeader(
             version_made_by=63,
-            version_needed_to_exctract=10,  # placeholder
+            version_needed_to_exctract=v,
             bit_flag=bit_flag,
-            compression_method=0,  # placeholder
-            last_mod_time=0,  # placeholder
-            last_mod_date=0,  # placeholder
+            compression_method=compression_method,
+            last_mod_time=time.to_bytes(4, 'little')[:2],
+            last_mod_date=time.to_bytes(4, 'little')[2:],
             crc=crc,
-            compressed_size=uncompressed_size,  # placeholder
+            compressed_size=len(fd),
             uncompressed_size=uncompressed_size,
-            file_name_length=len(fn.encode(self.encoding)),
+            filename_length=len(fn.encode(self.encoding)),
             extra_field_length=0,
-            file_comment_length=len(comment.encode(self.encoding)),
+            comment_length=len(comment.encode(self.encoding)),
             disk_number_start=0,
             internal_file_attrs=int('0').to_bytes(2, 'little'),
             external_file_attrs=int('0').to_bytes(4, 'little'),
             local_header_relative_offset=0,
-            file_name=fn,
+            filename=fn,
             extra_field=b'',
-            file_comment=comment
+            comment=comment
         )
         ic(file, cd_header)
         self.files[fp].append(file)
@@ -183,7 +191,7 @@ class NewZipFile:
             total_CD_entries=len(self.files.values()),
             sizeof_CD=0,
             offset=0,
-            comment_length=0,
+            comment_length=len(comment.encode(self.encoding)),
             comment=comment
         )
 
@@ -279,11 +287,12 @@ class ZipFile(Archive):
         for file, header in zip(files, CD_headers):
             if file.crc != crc32(file.contents) or header.crc != crc32(file.contents):
                 raise BadFile('File is corrupted or damaged.')
+            file.comment = header.comment
 
         return ZipFile(files, CD_headers, endof_cd)
 
     @staticmethod
-    def new(pwd: Optional[str] = None, encoding: str = 'utf-8', encryption: str = UNECNCRYPTED) -> NewZipFile:
+    def new(pwd: Optional[str] = None, encoding: str = 'utf-8', encryption: str = UNENCRYPTED) -> NewZipFile:
         """Initialize creation of new zip file.
 
         ``encoding`` is only used to decode filenames and comments. You may use different encoding on files.

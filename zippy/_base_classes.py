@@ -1,4 +1,3 @@
-import io
 from dataclasses import dataclass
 from datetime import datetime
 from os import PathLike, mkdir, path
@@ -31,6 +30,7 @@ class File:
     compressed_size: int
     uncompressed_size: int
     contents: bytes
+    comment: str = ''
 
     def extract(self, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', encoding: str = 'utf-8'):
         """Extract single file to given ``path``. If not specified, extracts to current working directory.

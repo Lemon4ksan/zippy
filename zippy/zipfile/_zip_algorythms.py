@@ -8,6 +8,7 @@ import zstandard
 from .utils import pwexplode
 from .utils import LZ77
 from .utils import ZipEncrypt
+from .compressions import *
 from .exceptions import *
 
 def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple[str, bytes]:
@@ -45,13 +46,12 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
         return encryption_method, b"".join(decrypted_content[12:])
 
 def decompress(compression_method: int, uncompressed_size: int, contents) -> tuple[str, bytes]:
-    """Deompress ``contents``.
+    """Decompress ``contents``.
     Returns tuple with first element being compression method and second being decompressed data.
     """
 
     if compression_method == 0:
         compression_method = 'Stored'
-        contents = contents
     elif compression_method in range(1, 6):
         raise NotImplemented('Shrinking and Reducing are not implemented yet.')
     elif compression_method == 6:
@@ -115,3 +115,44 @@ def decompress(compression_method: int, uncompressed_size: int, contents) -> tup
         raise NotImplementedError('AE-x encryption marker is not implemented yet.')
 
     return compression_method, contents
+
+def compress(method: int, level: str, contents) -> bytes:
+    """Compress ``contents``. Returns compressed data."""
+
+    if method in (8, 9):
+        if level == FAST:
+            level = 3
+        elif level == NORMAL:
+            level = 6
+        elif level == MAXIMUM:
+            level = 12
+        else:
+            raise ValueError(f'Unknown compression level {level}.')
+        contents = deflate.deflate_compress(contents, level)
+    # elif compression_method == 10:
+    #     compression_method = 'PKWARE Data Compression Library Imploding'
+    #     contents = pwexplode.explode(contents)  # Untested
+    elif method == 12:
+        contents = bz2.compress(contents)
+    # elif compression_method == 14:
+        # eos = bit_flag[-2]
+        # compression_method = 'LZMA'
+        # contents = lzma.decompress(contents, ???)  # Doesn't work for some reason.
+        # Also don't know how to make it to use EOS.
+        # raise NotImplementedError('LZMA compression is not implemented yet.')
+    # elif compression_method == 19:
+    #     compression_method = 'LZ77'
+    #     contents = LZ77.decompress(contents)  # Untested
+    elif method == 93:
+        contents = zstandard.decompress(contents)
+    elif method == 94:
+        contents = mp3.Encoder(contents)
+    elif method == 95:
+        contents = xz.decompress(contents)
+    # elif compression_method == 98:
+        # compression_method = 'PPMd'  # Docs says that only version I, Rev 1 of PPMd is supported
+        # maybe that's the reason it doesn't work
+        # contents = pyppmd.decompress(contents, mem_size=uncompressed_size)
+        # raise NotImplementedError('PPMd compression is not implemented yet.')
+
+    return contents

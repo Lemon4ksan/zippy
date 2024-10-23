@@ -1,6 +1,8 @@
+import datetime
 import unittest
 from zippy.zipfile.exceptions import *
-from zippy.zipfile import ZipFile
+from zippy import ZipFile
+from zippy.zipfile.compressions import *
 
 from os import chdir
 chdir('.\\zip_files')
@@ -33,6 +35,23 @@ class TestCase(unittest.TestCase):
         with ZipFile.open('folders.zip') as z:
             z.extract_all()
 
+    def test_new(self):
+        zipfile = ZipFile.new()
+        time = datetime.datetime.now()
+        zipfile.add_file(
+            'lorem ipsum.txt',
+            self.test_str,
+            compression=DEFLATE,
+            level=MAXIMUM,
+            last_mod_time=time,
+            comment='LOREM'
+        )
+        zipfile.save('new.zip', comment='Lorem')
+
+        with ZipFile.open('new.zip') as z:
+            self.assertEqual(self.test_str, z.files[0].peek())
+            self.assertEqual('Lorem', z.comment)
+            self.assertEqual('LOREM', z.files[0].comment)
 
 if __name__ == '__main__':
     unittest.main()

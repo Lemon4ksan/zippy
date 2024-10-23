@@ -7,6 +7,7 @@ PKWARE_IMPLODING: str = 'PKWARE Data Compression Library Imploding'
 BZIP: str = 'BZIP2'
 LZ77: str = 'LZ77'
 ZSTANDART: str = 'Zstandart'
+MP3 = 'MP3'
 XZ: str = 'XZ'
 
 COMPRESSION_FROM_STR: dict[str, int] = {
@@ -17,5 +18,11 @@ COMPRESSION_FROM_STR: dict[str, int] = {
     BZIP: 12,
     LZ77: 19,
     ZSTANDART: 93,
+    MP3: 94,
     XZ: 95
 }
+
+# Compression levels
+FAST = 'Fast'
+NORMAL = 'Normal'
+MAXIMUM = 'Maximum'
