@@ -1,10 +1,12 @@
 import unittest
-
 from zippy.zipfile.exceptions import *
 from zippy.zipfile import ZipFile
 
 from os import chdir
 chdir('.\\zip_files')
+
+from icecream import ic
+ic.disable()
 
 class TestCase(unittest.TestCase):
 

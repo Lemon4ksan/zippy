@@ -19,25 +19,28 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
         encryption_method = 'Unencrypted'
         return encryption_method, contents
     else:
+        if not v >= 20:
+            raise BadFile('Incorrect version specified.')
+
         encryption_method = 'ZipCrypto'
         zd = ZipEncrypt.ZipDecrypter(pwd)
         decrypted_content = list(map(zd, contents))
         decryption_header = decrypted_content[:13]
+
         # Each encrypted file has an extra 12 bytes stored at the start
-        # of the data area defining the encryption header for that file.  The
+        # of the data area defining the encryption header for that file. The
         # encryption header is originally set to random values, and then
         # itself encrypted, using three, 32-bit keys.
-        if v >= 20:
-            if int.from_bytes(decryption_header[-2], 'little') != crc.to_bytes(4, 'little')[-1]:
-                # After the header is decrypted,  the last 1 or 2 bytes in Buffer
-                # SHOULD be the high-order word/byte of the CRC for the file being
-                # decrypted, stored in Intel low-byte/high-byte order.  Versions of
-                # PKZIP prior to 2.0 used a 2 byte CRC check; a 1 byte CRC check is
-                # used on versions after 2.0.  This can be used to test if the password
-                # supplied is correct or not.
+        if int.from_bytes(decryption_header[-2], 'little') != crc.to_bytes(4, 'little')[-1]:
+            # After the header is decrypted,  the last 1 or 2 bytes in Buffer
+            # SHOULD be the high-order word/byte of the CRC for the file being
+            # decrypted, stored in Intel low-byte/high-byte order.  Versions of
+            # PKZIP prior to 2.0 used a 2 byte CRC check; a 1 byte CRC check is
+            # used on versions after 2.0. This can be used to test if the password
+            # supplied is correct or not.
 
-                # ^ This is a lie, we're comparing only second last decryption_header byte with last crc byte
-                raise WrongPassword('given password is incorrect.')
+            # ^ This is a lie, we're comparing only second last decryption_header byte with last crc byte
+            raise WrongPassword('given password is incorrect.')
 
         return encryption_method, b"".join(decrypted_content[12:])
 
@@ -52,8 +55,7 @@ def decompress(compression_method: int, uncompressed_size: int, contents) -> tup
     elif compression_method in range(1, 6):
         raise NotImplemented('Shrinking and Reducing are not implemented yet.')
     elif compression_method == 6:
-        raise Deprecated(
-            'Legacy Implode is no longer supported. Use PKWARE Data Compression Library Imploding instead.')
+        raise Deprecated('Legacy Implode is no longer supported. Use PKWARE Data Compression Library Imploding instead.')
     elif compression_method == 7:
         raise Deprecated('Tokenizing is not used by PKZIP.')
     elif compression_method == 8:

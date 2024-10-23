@@ -15,5 +15,3 @@ class EncryptionError(ZippyException):
 
 class WrongPassword(EncryptionError):
     """Given password is incorrect."""
-
-

@@ -9,7 +9,7 @@ LZ77: str = 'LZ77'
 ZSTANDART: str = 'Zstandart'
 XZ: str = 'XZ'
 
-_ID_FROM_STR: dict[str, int] = {
+COMPRESSION_FROM_STR: dict[str, int] = {
     STORED: 0,
     DEFLATE: 8,
     DEFLATE64: 9,

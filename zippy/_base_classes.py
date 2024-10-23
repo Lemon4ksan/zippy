@@ -37,7 +37,7 @@ class File:
         If file couldn't be decoded using given ``encoding``, its byte representation will be extracted instead.
         """
 
-        contents = self.peek(encoding)
+        contents = self.peek(encoding, ignore_overflow=True)
         if not path.exists(__path):
             mkdir(__path)
         __path = path.join(__path, self.file_name.replace('/', '\\'))  # get final file path
@@ -69,9 +69,9 @@ class File:
             return 'Folder'
 
         try:
-            content = io.BytesIO(self.contents).read().decode(encoding)
+            content = self.contents.decode(encoding)
         except ValueError:  # Decoding falied
-            content = io.BytesIO(self.contents).read()
+            content = self.contents
 
         if len(content) > char_limit and not ignore_overflow:
             if isinstance(content, str):
