@@ -69,7 +69,7 @@ class NewZipFile:
             last_mod_time = datetime.now()
 
         # This conversion is based on java8 source code
-        time = ((last_mod_time.year - 1980) << 25 | (last_mod_time.month + 1) << 21 | last_mod_time.day << 16 |
+        time = ((last_mod_time.year - 1980) << 25 | last_mod_time.month << 21 | last_mod_time.day << 16 |
                 last_mod_time.hour << 11 | last_mod_time.minute << 5 | last_mod_time.second >> 1)
 
         if isinstance(fd, bytes):
@@ -84,7 +84,7 @@ class NewZipFile:
         else:
             raise TypeError(f'Expected file data to be str, bytes, io.TextIO or io.BinaryIO, not {type(fd).__name__}')
 
-        bit_flag: list[str] = list('00000000')
+        bit_flag: list[str] = list('0000000000000000')
         if self.encryption != UNENCRYPTED:
             bit_flag[0] = '1'
 
@@ -126,7 +126,8 @@ class NewZipFile:
             encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
             fd = encryption_header + b"".join(map(ze, fd))
 
-        bit_flag: bytes = int("".join(bit_flag), 2).to_bytes(2, 'little')
+        bit_flag: bytes = int("".join(bit_flag[::-1]), 2).to_bytes(2, 'little')
+
         file = FileRaw(
             version_needed_to_exctract=v,
             bit_flag=bit_flag,
@@ -207,10 +208,10 @@ class NewZipFile:
 
         with open(__path, 'wb') as z:  # WIP
             for file in self.files['.']:
-                z.write(ic(b'PK\x03\x04' + file.encode(self.encoding)))
+                z.write(b'PK\x03\x04' + file.encode(self.encoding))
             for header in self.cd_headers['.']:
-                z.write(ic(b'PK\x01\x02' + header.encode(self.encoding)))
-            z.write(ic(b'PK\x05\x06' + endof_cd.encode(self.encoding)))
+                z.write(b'PK\x01\x02' + header.encode(self.encoding))
+            z.write(b'PK\x05\x06' + endof_cd.encode(self.encoding))
 
 
 class ZipFile(Archive):

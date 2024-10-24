@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from os import PathLike, mkdir, path
+from typing import Optional
 
 
 @dataclass
@@ -13,7 +14,8 @@ class File:
         version_needed_to_exctract (:obj:`int`): Minimal version of zip required to unpack.
         encryption_method (:obj:`str`): Name of the encryption method. Unencrypted if none.
         compression_method (:obj:`str`): Name of the compression method. Stored if none.
-        last_mod_time (:class:`datetime`): Datetime of last modification of the file.
+        last_mod_time (:class:`datetime`, optional): Datetime of last modification of the file.
+            None if time is not specified, which shouldn't happen.
         crc (:obj:`int`): CRC of the file.
         compressed_size (:obj:`int`): Compressed size of the file.
         uncompressed_size (:obj:`int`): Uncompressed size of the file.
@@ -25,7 +27,7 @@ class File:
     version_needed_to_exctract: int
     encryption_method: str
     compression_method: str
-    last_mod_time: datetime
+    last_mod_time: Optional[datetime]
     crc: int
     compressed_size: int
     uncompressed_size: int

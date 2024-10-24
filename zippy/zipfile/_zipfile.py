@@ -62,7 +62,7 @@ class FileRaw:
 
     def decode(self, pwd: Optional[str]) -> File:
         
-        bit_flag = "".join(format(bit, 'b') for bit in self.bit_flag)
+        bit_flag = "".join("".join(format(bit, '0>8b'))[::-1] for bit in self.bit_flag)
         
         encryption_method, contents = decrypt(bit_flag, self.version_needed_to_exctract, self.crc, pwd, self.contents)
 
@@ -71,8 +71,8 @@ class FileRaw:
         # This conversion is based on java8 source code.
         try:
             last_mod_time = time((self.last_mod_time >> 11) & 0x1F, (self.last_mod_time >> 5) & 0x3F,
-                                 ((self.last_mod_time << 1) & 0x3E) - 2)
-            last_mod_date = date((self.last_mod_date >> 9) + 1980, ((self.last_mod_date >> 5) & 0xF) - 1,
+                                 (self.last_mod_time << 1) & 0x3E)
+            last_mod_date = date((self.last_mod_date >> 9) + 1980, (self.last_mod_date >> 5) & 0xF,
                                  self.last_mod_date & 0x1F)
         except ValueError:
             last_mod_time = last_mod_date = None
