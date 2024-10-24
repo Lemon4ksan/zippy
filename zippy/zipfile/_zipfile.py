@@ -69,7 +69,6 @@ class FileRaw:
         compression_method, contents = decompress(self.compression_method, self.uncompressed_size, contents)
 
         # This conversion is based on java8 source code.
-        # Some precision is lost, but I can't find more appropriate method of doing this.
         try:
             last_mod_time = time((self.last_mod_time >> 11) & 0x1F, (self.last_mod_time >> 5) & 0x3F,
                                  ((self.last_mod_time << 1) & 0x3E) - 2)

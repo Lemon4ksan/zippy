@@ -22,17 +22,18 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
     else:
         if not v >= 20:
             raise BadFile('Incorrect version specified.')
+            # This should be implemented but you will never see
 
         encryption_method = 'ZipCrypto'
         zd = ZipEncrypt.ZipDecrypter(pwd)
         decrypted_content = list(map(zd, contents))
-        decryption_header = decrypted_content[:13]
+        decryption_header = decrypted_content[:12]
 
         # Each encrypted file has an extra 12 bytes stored at the start
         # of the data area defining the encryption header for that file. The
         # encryption header is originally set to random values, and then
         # itself encrypted, using three, 32-bit keys.
-        if int.from_bytes(decryption_header[-2], 'little') != crc.to_bytes(4, 'little')[-1]:
+        if int.from_bytes(decryption_header[-1], 'little') != crc.to_bytes(4, 'little')[-1]:
             # After the header is decrypted,  the last 1 or 2 bytes in Buffer
             # SHOULD be the high-order word/byte of the CRC for the file being
             # decrypted, stored in Intel low-byte/high-byte order.  Versions of
@@ -40,7 +41,6 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
             # used on versions after 2.0. This can be used to test if the password
             # supplied is correct or not.
 
-            # ^ This is a lie, we're comparing only second last decryption_header byte with last crc byte
             raise WrongPassword('given password is incorrect.')
 
         return encryption_method, b"".join(decrypted_content[12:])

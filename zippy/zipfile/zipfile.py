@@ -1,11 +1,13 @@
 from typing import BinaryIO, TextIO, Optional, Self
-from os import PathLike, path
+from os import PathLike, path, urandom
 from datetime import datetime
 from icecream import ic
+ic.disable()  # Remove after testing
 
 from zlib import crc32
 
 from .._base_classes import Archive, File
+from .utils.ZipEncrypt import ZipEncrypter
 from ._zipfile import FileRaw, CDHeader, CDEnd
 from ._zip_algorythms import compress
 from .exceptions import *
@@ -27,6 +29,8 @@ class NewZipFile:
         self.encryption: str = encryption
         self.files: dict[str | PathLike, list[FileRaw]] = {'.': []}
         self.cd_headers: dict[str | PathLike, list[CDHeader]] = {'.': []}
+        self.sizeof_CD: int = 0
+        self.offset: int = 0
 
     def add_file(
             self,
@@ -72,6 +76,7 @@ class NewZipFile:
             crc: int = crc32(fd)
         elif isinstance(fd, (TextIO, BinaryIO)):
             crc: int = crc32(fd.read())
+            fd = fd.read().encode(encoding)
         elif isinstance(fd, str):
             fd: bytes = fd.encode(encoding)
             crc: int = crc32(fd)
@@ -82,9 +87,6 @@ class NewZipFile:
         bit_flag: list[str] = list('00000000')
         if self.encryption != UNENCRYPTED:
             bit_flag[0] = '1'
-        bit_flag: bytes = int("".join(bit_flag), 2).to_bytes(2, 'little')
-
-        # TODO: Figure out how to get last mod time
 
         compression_method: int = COMPRESSION_FROM_STR[compression]
 
@@ -118,7 +120,13 @@ class NewZipFile:
             v = 10
 
         fd = compress(compression_method, level, fd)
+        if bit_flag[0] == '1':
+            ze = ZipEncrypter(self.pwd)
+            check_byte = crc.to_bytes(4, 'little')[-1]  # Not sure if it's right (me == stupid)
+            encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
+            fd = encryption_header + b"".join(map(ze, fd))
 
+        bit_flag: bytes = int("".join(bit_flag), 2).to_bytes(2, 'little')
         file = FileRaw(
             version_needed_to_exctract=v,
             bit_flag=bit_flag,
@@ -168,14 +176,16 @@ class NewZipFile:
             disk_number_start=0,
             internal_file_attrs=int('0').to_bytes(2, 'little'),
             external_file_attrs=int('0').to_bytes(4, 'little'),
-            local_header_relative_offset=0,
+            local_header_relative_offset=0,  # placeholder
             filename=fn,
-            extra_field=b'',
+            extra_field=b'',  # palceholder
             comment=comment
         )
         ic(file, cd_header)
         self.files[fp].append(file)
         self.cd_headers[fp].append(cd_header)
+        self.sizeof_CD += len(cd_header.encode(self.encoding))
+        self.offset += len(file.encode(self.encoding))
 
     def save(self, fn: str, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', comment: str = ''):
         """Save new zip file with name ``fn`` at given ``path``.
@@ -184,18 +194,18 @@ class NewZipFile:
         """
 
         __path = path.join(__path, fn)
-        endof_cd = CDEnd(  # This entire thing is a placeholder (it doesn't matter when unpacking)
+        endof_cd = CDEnd(
             disk_num=0,
             disk_num_CD=0,
             total_entries=len(self.files.values()),
-            total_CD_entries=len(self.files.values()),
-            sizeof_CD=0,
-            offset=0,
+            total_CD_entries=len(self.cd_headers.values()),
+            sizeof_CD=self.sizeof_CD,
+            offset=self.offset,
             comment_length=len(comment.encode(self.encoding)),
             comment=comment
         )
 
-        with open(__path, 'wb') as z:
+        with open(__path, 'wb') as z:  # WIP
             for file in self.files['.']:
                 z.write(ic(b'PK\x03\x04' + file.encode(self.encoding)))
             for header in self.cd_headers['.']:
@@ -292,7 +302,7 @@ class ZipFile(Archive):
         return ZipFile(files, CD_headers, endof_cd)
 
     @staticmethod
-    def new(pwd: Optional[str] = None, encoding: str = 'utf-8', encryption: str = UNENCRYPTED) -> NewZipFile:
+    def new(pwd: Optional[str] = None, encryption: str = UNENCRYPTED, encoding: str = 'utf-8') -> NewZipFile:
         """Initialize creation of new zip file.
 
         ``encoding`` is only used to decode filenames and comments. You may use different encoding on files.

@@ -79,3 +79,13 @@ class ZipDecrypter:
         self.update_keys(c)
         c = c.to_bytes(byteorder='little')
         return c
+
+class ZipEncrypter(ZipDecrypter):
+    def __call__(self, c: int) -> bytes:
+        """Encrypt a single character."""
+        _c = c
+        k = self.key2 | 2
+        c = c ^ (((k * (k ^ 1)) >> 8) & 255)
+        self.update_keys(_c)  # this is the only line that actually changed
+        c = c.to_bytes(byteorder='little')
+        return c
