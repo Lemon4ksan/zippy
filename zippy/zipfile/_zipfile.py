@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from datetime import date, time, datetime
 from typing import BinaryIO, Optional
 
+from .._base_classes import File
 from ._zip_algorythms import decrypt, decompress
-from zippy._base_classes import File
 from .exceptions import *
 
 @dataclass
@@ -12,7 +12,7 @@ class FileRaw:
      and contains data fields that user doesn't need."""
 
     version_needed_to_exctract: int
-    bit_flag: bytes
+    bit_flag: str
     compression_method: int
     last_mod_time: int
     last_mod_date: int
@@ -31,7 +31,7 @@ class FileRaw:
         version_needed_to_exctract = version[0]
         if version[1] != 0:  # This byte is unused
             raise BadFile('Unknown version value')
-        bit_flag = file.read(2)
+        bit_flag = "".join("".join(format(bit, '0>8b')[::-1]) for bit in file.read(2))
         compression_method = int.from_bytes(file.read(2), 'little')
         last_mod_time = int.from_bytes(file.read(2), 'little')
         last_mod_date = int.from_bytes(file.read(2), 'little')
@@ -43,6 +43,16 @@ class FileRaw:
         filename = file.read(filename_length).decode(encoding)
         extra_field = file.read(extra_field_length)
         contents = file.read(compressed_size)
+
+        if bit_flag[3] == '1':
+            _t = file.read(4)
+            if _t == b'PK\x07\x08':  # This signature is not official
+                _t = file.read(4)
+            crc = int.from_bytes(_t, 'little')
+            compressed_size = int.from_bytes(file.read(4), 'little')
+            uncompressed_size = int.from_bytes(file.read(4), 'little')
+        if bit_flag[13] == '1':
+            raise NotImplementedError('Central Directory decryption is not implemented yet.')
 
         return cls(
             version_needed_to_exctract,
@@ -62,9 +72,9 @@ class FileRaw:
 
     def decode(self, pwd: Optional[str]) -> File:
         
-        bit_flag = "".join("".join(format(bit, '0>8b'))[::-1] for bit in self.bit_flag)
-        
-        encryption_method, contents = decrypt(bit_flag, self.version_needed_to_exctract, self.crc, pwd, self.contents)
+        encryption_method, contents = decrypt(
+            self.bit_flag, self.version_needed_to_exctract, self.crc, pwd, self.contents
+        )
 
         compression_method, contents = decompress(self.compression_method, self.uncompressed_size, contents)
 
@@ -93,7 +103,7 @@ class FileRaw:
     def encode(self, encoding: str) -> bytes:
         byte_str: bytes = b''
         byte_str += self.version_needed_to_exctract.to_bytes(2, 'little')
-        byte_str += self.bit_flag
+        byte_str += int(self.bit_flag[::-1], 2).to_bytes(2, 'little')
         byte_str += self.compression_method.to_bytes(2, 'little')
         byte_str += self.last_mod_time
         byte_str += self.last_mod_date
@@ -115,8 +125,9 @@ class CDHeader:
     """
 
     version_made_by: int
+    platform: int
     version_needed_to_exctract: int
-    bit_flag: bytes
+    bit_flag: str
     compression_method: int
     last_mod_time: int
     last_mod_date: int
@@ -136,9 +147,10 @@ class CDHeader:
 
     @classmethod
     def __init_raw__(cls, file: BinaryIO, encoding: str):
-        version_made_by = int.from_bytes(file.read(2), 'little')
+        version_made_by = int.from_bytes(file.read(1), 'little')
+        platform = int.from_bytes(file.read(1), 'little')
         version_needed_to_exctract = int.from_bytes(file.read(2), 'little')
-        bit_flag = file.read(2)
+        bit_flag = "".join("".join(format(bit, '0>8b')[::-1]) for bit in file.read(2))
         compression_method = int.from_bytes(file.read(2), 'little')
         last_mod_time = int.from_bytes(file.read(2), 'little')
         last_mod_date = int.from_bytes(file.read(2), 'little')
@@ -158,6 +170,7 @@ class CDHeader:
 
         return cls(
             version_made_by,
+            platform,
             version_needed_to_exctract,
             bit_flag,
             compression_method,
@@ -180,9 +193,10 @@ class CDHeader:
 
     def encode(self, encoding: str) -> bytes:
         byte_str: bytes = b''
-        byte_str += self.version_made_by.to_bytes(2, 'little')
+        byte_str += self.version_made_by.to_bytes(1, 'little')
+        byte_str += self.platform.to_bytes(1, 'little')
         byte_str += self.version_needed_to_exctract.to_bytes(2, 'little')
-        byte_str += self.bit_flag
+        byte_str += int(self.bit_flag[::-1], 2).to_bytes(2, 'little')
         byte_str += self.compression_method.to_bytes(2, 'little')
         byte_str += self.last_mod_time
         byte_str += self.last_mod_date

@@ -50,10 +50,12 @@ def decompress(compression_method: int, uncompressed_size: int, contents) -> tup
     Returns tuple with first element being compression method and second being decompressed data.
     """
 
+    # Note that values past 14 are ignored according to Info-ZIP note, 20040528.
+    # They don't have practical application.
     if compression_method == 0:
         compression_method = 'Stored'
     elif compression_method in range(1, 6):
-        raise NotImplemented('Shrinking and Reducing are not implemented yet.')
+        raise NotImplementedError('Shrinking and Reducing are not implemented yet.')
     elif compression_method == 6:
         raise Deprecated('Legacy Implode is no longer supported. Use PKWARE Data Compression Library Imploding instead.')
     elif compression_method == 7:
@@ -80,39 +82,6 @@ def decompress(compression_method: int, uncompressed_size: int, contents) -> tup
         # contents = lzma.decompress(contents, ???)  # Doesn't work for some reason.
         # Also don't know how to make it to use EOS.
         raise NotImplementedError('LZMA compression is not implemented yet.')
-    elif compression_method == 15:
-        raise ReservedValue('Compression method 15 is reserved.')
-    elif compression_method == 16:  # can't find this
-        raise NotImplementedError('IBM z/OS CMPSC Compression is not implemented.')
-    elif compression_method == 17:
-        raise ReservedValue('Compression method 17 is reserved.')
-    elif compression_method == 18:  # can't find this, somebody uses it?
-        raise NotImplementedError('IBM TERSE is not implemented.')
-    elif compression_method == 19:
-        compression_method = 'LZ77'
-        contents = LZ77.decompress(contents)  # Untested
-    elif compression_method == 20:
-        raise Deprecated('Method 20 is deprecated. Use Zstandart compression instead.')
-    elif compression_method == 93:
-        compression_method = 'Zstandart'
-        contents = zstandard.decompress(contents)
-    elif compression_method == 94:
-        compression_method = 'MP3'
-        contents = mp3.Decoder(contents).read()
-    elif compression_method == 95:
-        compression_method = 'XZ'
-        contents = xz.decompress(contents)
-    elif compression_method == 96:
-        raise NotImplementedError('JPEG compression is not implemented yet.')
-    elif compression_method == 97:
-        raise NotImplementedError('WavPack compression is not implemented yet.')
-    elif compression_method == 98:
-        # compression_method = 'PPMd'  # Docs says that only version I, Rev 1 of PPMd is supported
-        # maybe that's the reason it doesn't work
-        # contents = pyppmd.decompress(contents, mem_size=uncompressed_size)
-        raise NotImplementedError('PPMd compression is not implemented yet.')
-    elif compression_method == 99:  # What is this??
-        raise NotImplementedError('AE-x encryption marker is not implemented yet.')
 
     return compression_method, contents
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from os import PathLike, mkdir, path
-from typing import Optional
+from typing import Optional, Any
 
 
 @dataclass
@@ -20,6 +20,8 @@ class File:
         compressed_size (:obj:`int`): Compressed size of the file.
         uncompressed_size (:obj:`int`): Uncompressed size of the file.
         contents (:obj:`bytes`): Undecoded contents of the file.
+        specifications (:obj:`list`[:obj:`Any`]`): Miscelenious information about the
+            file that may vary on archive's structure.
     """
 
     file_name: str
@@ -33,6 +35,7 @@ class File:
     uncompressed_size: int
     contents: bytes
     comment: str = ''
+    specifications: Optional[list[Any]] = None
 
     def extract(self, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', encoding: str = 'utf-8'):
         """Extract single file to given ``path``. If not specified, extracts to current working directory.
@@ -44,7 +47,7 @@ class File:
             mkdir(__path)
         __path = path.join(__path, self.file_name.replace('/', '\\'))  # get final file path
 
-        if path.exists(__path) and path.isdir(__path):
+        if path.exists(__path) and self.is_dir:
             # Folder already extracted
             return
 

@@ -1,6 +1,7 @@
 from typing import BinaryIO, TextIO, Optional, Self
 from os import PathLike, path, urandom
-from datetime import datetime
+from platform import system
+from datetime import datetime, UTC
 from icecream import ic
 ic.disable()  # Remove after testing
 
@@ -27,10 +28,9 @@ class NewZipFile:
         self.pwd: Optional[str] = pwd
         self.encoding: str = encoding
         self.encryption: str = encryption
-        self.files: dict[str | PathLike, list[FileRaw]] = {'.': []}
-        self.cd_headers: dict[str | PathLike, list[CDHeader]] = {'.': []}
+        self.files: dict[str | PathLike, dict[str, FileRaw]] = {'.': {}}
+        self.cd_headers: dict[str | PathLike, dict[str, CDHeader]] = {'.': {}}
         self.sizeof_CD: int = 0
-        self.offset: int = 0
 
     def add_file(
             self,
@@ -46,14 +46,16 @@ class NewZipFile:
     ):
         """Add file to zip archive.
 
-        ``fn`` is filename. It should be encoded in the same encoding specified in file creation.
+        ``fn`` is filename inside zip. It will be encoded in the same encoding specified in file creation.
 
         ``fd`` is file's data. It can be string, bytes object, os.PathLike, text and binary stream.
-        If it's not os.PathLike, ``last_mod_date`` must be provided, if not, ``datetime.now()`` will be used instead.
+        If it's os.PathLike, contents of the file path's leading to will be used.
 
         ``fp`` is file's path inside zip. '.' represents root. Every path should start from root.
 
         ``encoding`` is encoding in wich file's data will be encoded. It may vary from the initial encoding.
+
+        If ``last_mod_date`` is not provided and fd is not os.PathLike, current time will be used instead.
 
         Additional ``comment`` can be applied to the file.
         """
@@ -61,10 +63,14 @@ class NewZipFile:
         if fp not in self.files:
             if fp[0] != '.':
                 raise ValueError(f'Invalid filepath {fp}')
-            self.files.update({fp: []})
+            self.files.update({fp: {}})
 
-        if isinstance(fd, PathLike):
-            last_mod_time = datetime.fromtimestamp(path.getmtime())
+        initial_fd = None  # Used to get a, m and c time of the file if fd is pathlike.
+        if path.isfile(fd):
+            initial_fd = fd
+            last_mod_time = datetime.fromtimestamp(path.getmtime(fd))
+            with open(fd, 'rb') as f:
+                fd = f.read()
         elif last_mod_time is None:
             last_mod_time = datetime.now()
 
@@ -80,13 +86,22 @@ class NewZipFile:
         elif isinstance(fd, str):
             fd: bytes = fd.encode(encoding)
             crc: int = crc32(fd)
-            uncompressed_size: int = len(fd)
         else:
-            raise TypeError(f'Expected file data to be str, bytes, io.TextIO or io.BinaryIO, not {type(fd).__name__}')
+            raise TypeError(
+                f'Expected file data to be str, bytes, os.PathLike, io.TextIO or io.BinaryIO, not {type(fd).__name__}'
+            )
+        uncompressed_size: int = len(fd)
 
-        bit_flag: list[str] = list('0000000000000000')
+        bit_flag = list('0000000000000000')
         if self.encryption != UNENCRYPTED:
             bit_flag[0] = '1'
+        if compression in (DEFLATE, DEFLATE64):
+            if level == FAST:
+                bit_flag[2] = '1'
+            elif level == MAXIMUM:
+                bit_flag[1] = '1'
+        if self.encoding == 'utf-8':
+            bit_flag[11] = '1'  # Language encoding flag (EFS)
 
         compression_method: int = COMPRESSION_FROM_STR[compression]
 
@@ -126,11 +141,44 @@ class NewZipFile:
             encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
             fd = encryption_header + b"".join(map(ze, fd))
 
-        bit_flag: bytes = int("".join(bit_flag[::-1]), 2).to_bytes(2, 'little')
+        # Only these values are relevant today.
+        # 0 - MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems)
+        # 3 - UNIX
+        # 10 - Windows NTFS
+        # 19 - OS X (Darwin)
+
+        # 0x0001        Zip64 extended information extra field
+        # 0x000a        NTFS
+        # 0x000d        UNIX
+
+        pl = system()
+        if pl == 'Windows':
+            platform = 10
+            if initial_fd:
+                def convert(timestap: float) -> bytes:
+                    """Conver Unix timestamp to NTFS timestamp."""
+                    dt = datetime.fromtimestamp(timestap, UTC)
+                    ntfs_epoch = datetime(1601, 1, 1, tzinfo=UTC)
+                    delta = dt - ntfs_epoch
+                    ntfs_time = delta.total_seconds() * 10000000
+                    return int(ntfs_time).to_bytes(8, 'little')
+
+                extra_filed = b'\x0a\x00\x20\x00\x00\x00\x00\x00\x01\x00\x18\x00'
+                extra_filed += convert(path.getmtime(initial_fd))
+                extra_filed += convert(path.getatime(initial_fd))
+                extra_filed += convert(path.getctime(initial_fd))
+            else:
+                extra_filed = b''
+        elif pl == 'Linux':
+            platform = 3
+        elif pl == 'Darwin':
+            platform = 19
+        else:
+            platform = 0
 
         file = FileRaw(
             version_needed_to_exctract=v,
-            bit_flag=bit_flag,
+            bit_flag="".join(bit_flag),
             compression_method=compression_method,
             last_mod_time=time.to_bytes(4, 'little')[:2],
             last_mod_date=time.to_bytes(4, 'little')[2:],
@@ -138,33 +186,20 @@ class NewZipFile:
             compressed_size=len(fd),
             uncompressed_size=uncompressed_size,
             filename_length=len(fn.encode(self.encoding)),
-            extra_field_length=0,  # placeholder
+            extra_field_length=len(extra_filed),
             filename=fn,
-            extra_field=b'',  # palceholder
+            extra_field=extra_filed,
             contents=fd
         )
-
-        # TODO: Create version_made_by table
-
-        #  0 - MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems)
-        #  1 - Amiga                     2 - OpenVMS
-        #  3 - UNIX                      4 - VM/CMS
-        #  5 - Atari ST                  6 - OS/2 H.P.F.S.
-        #  7 - Macintosh                 8 - Z-System
-        #  9 - CP/M                     10 - Windows NTFS
-        # 11 - MVS (OS/390 - Z/OS)      12 - VSE
-        # 13 - Acorn Risc               14 - VFAT
-        # 15 - alternate MVS            16 - BeOS
-        # 17 - Tandem                   18 - OS/400
-        # 19 - OS X (Darwin)            20 thru 255 - unused
 
         # Currently extra_field_length, disk_number_start, internal_file_attrs,
         # local_header_relative_offset and extra_field remain placeholders
 
         cd_header = CDHeader(
             version_made_by=63,
+            platform=platform,
             version_needed_to_exctract=v,
-            bit_flag=bit_flag,
+            bit_flag="".join(bit_flag),
             compression_method=compression_method,
             last_mod_time=time.to_bytes(4, 'little')[:2],
             last_mod_date=time.to_bytes(4, 'little')[2:],
@@ -172,21 +207,20 @@ class NewZipFile:
             compressed_size=len(fd),
             uncompressed_size=uncompressed_size,
             filename_length=len(fn.encode(self.encoding)),
-            extra_field_length=0,
+            extra_field_length=len(extra_filed),
             comment_length=len(comment.encode(self.encoding)),
             disk_number_start=0,
-            internal_file_attrs=int('0').to_bytes(2, 'little'),
-            external_file_attrs=int('0').to_bytes(4, 'little'),
+            internal_file_attrs=int('0').to_bytes(2, 'little'),  # Doesn't do much
+            external_file_attrs=int('0').to_bytes(4, 'little'),  # Should be 0 for stdin
             local_header_relative_offset=0,  # placeholder
             filename=fn,
-            extra_field=b'',  # palceholder
+            extra_field=extra_filed,
             comment=comment
         )
         ic(file, cd_header)
-        self.files[fp].append(file)
-        self.cd_headers[fp].append(cd_header)
+        self.files[fp][file.filename] = file
+        self.cd_headers[fp][file.filename] = cd_header
         self.sizeof_CD += len(cd_header.encode(self.encoding))
-        self.offset += len(file.encode(self.encoding))
 
     def save(self, fn: str, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', comment: str = ''):
         """Save new zip file with name ``fn`` at given ``path``.
@@ -194,6 +228,8 @@ class NewZipFile:
         Additional ``comment`` can be applied to the file.
         """
 
+        # Storing zip on different disks will not be implemented due to lack of python utils for that task.
+        # disk_num, disk_num_CD and offset should be 0
         __path = path.join(__path, fn)
         endof_cd = CDEnd(
             disk_num=0,
@@ -201,15 +237,15 @@ class NewZipFile:
             total_entries=len(self.files.values()),
             total_CD_entries=len(self.cd_headers.values()),
             sizeof_CD=self.sizeof_CD,
-            offset=self.offset,
+            offset=0,
             comment_length=len(comment.encode(self.encoding)),
             comment=comment
         )
 
         with open(__path, 'wb') as z:  # WIP
-            for file in self.files['.']:
+            for file in self.files['.'].values():
                 z.write(b'PK\x03\x04' + file.encode(self.encoding))
-            for header in self.cd_headers['.']:
+            for header in self.cd_headers['.'].values():
                 z.write(b'PK\x01\x02' + header.encode(self.encoding))
             z.write(b'PK\x05\x06' + endof_cd.encode(self.encoding))
 
@@ -279,11 +315,11 @@ class ZipFile(Archive):
             while True:
                 signature = f.read(4)
                 if signature == b'PK\x03\x04':  # Getting file headers
-                    raw_file = FileRaw.__init_raw__(f, encoding)
-                    files.append(ic(raw_file.decode(pwd)))
+                    raw_file = ic(FileRaw.__init_raw__(f, encoding))
+                    files.append(raw_file.decode(pwd))
                 elif signature == b'PK\x01\x02':  # Getting central directory headers of fieles
-                    header = CDHeader.__init_raw__(f, encoding)
-                    CD_headers.append(ic(header))
+                    header = ic(CDHeader.__init_raw__(f, encoding))
+                    CD_headers.append(header)
                 elif signature == b'PK\x05\x06':  # End of centeral directory (stop reading)
                     endof_cd = ic(CDEnd.__init_raw__(f, encoding))
                     break
