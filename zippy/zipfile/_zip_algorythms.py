@@ -1,8 +1,5 @@
 import xz
-import mp3
 import bz2
-# import lzma
-# import pyppmd
 import deflate
 import zstandard
 from .utils import pwexplode
@@ -82,6 +79,15 @@ def decompress(compression_method: int, uncompressed_size: int, contents) -> tup
         # contents = lzma.decompress(contents, ???)  # Doesn't work for some reason.
         # Also don't know how to make it to use EOS.
         raise NotImplementedError('LZMA compression is not implemented yet.')
+    elif compression_method == 19:
+        compression_method = 'LZ77'
+        contents = LZ77.decompress(contents)  # Untested
+    elif compression_method == 93:
+        compression_method = 'Zstandart'
+        contents = zstandard.decompress(contents)
+    elif compression_method == 95:
+        compression_method = 'XZ'
+        contents = xz.decompress(contents)
 
     return compression_method, contents
 
@@ -114,8 +120,6 @@ def compress(method: int, level: str, contents) -> bytes:
     #     contents = LZ77.decompress(contents)  # Untested
     elif method == 93:
         contents = zstandard.decompress(contents)
-    elif method == 94:
-        contents = mp3.Encoder(contents)
     elif method == 95:
         contents = xz.decompress(contents)
     # elif compression_method == 98:

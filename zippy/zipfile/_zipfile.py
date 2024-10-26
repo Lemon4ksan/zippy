@@ -8,7 +8,7 @@ from .exceptions import *
 
 @dataclass
 class FileRaw:
-    """File extracted from archive. It's uncompressed, not decrypted (if it was)
+    """Raw file representation. It's uncompressed, not decrypted (if it was)
      and contains data fields that user doesn't need."""
 
     version_needed_to_exctract: int

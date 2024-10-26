@@ -1,11 +1,12 @@
 from typing import BinaryIO, TextIO, Optional, Self
+from io import IOBase
 from os import PathLike, path, urandom
 from platform import system
 from datetime import datetime, UTC
+from zlib import crc32
+
 from icecream import ic
 ic.disable()  # Remove after testing
-
-from zlib import crc32
 
 from .._base_classes import Archive, File
 from .utils.ZipEncrypt import ZipEncrypter
@@ -25,12 +26,33 @@ class NewZipFile:
             encoding: str,
             encryption: str
     ):
+        # Dictionaries are used to easily replace file's content with new one. All files should "grow" from '.'
+        # They are being sorted each time to keep consistent representation.
         self.pwd: Optional[str] = pwd
         self.encoding: str = encoding
         self.encryption: str = encryption
         self.files: dict[str | PathLike, dict[str, FileRaw]] = {'.': {}}
         self.cd_headers: dict[str | PathLike, dict[str, CDHeader]] = {'.': {}}
         self.sizeof_CD: int = 0
+
+    def add_folder(self, fp: str | PathLike[str] = '.') -> str:
+        """Add folder inside zip.
+
+        ``fp`` is file's path inside zip. '.' represents root. Every path should start from root.
+
+        Returns string representing final path. Used to add new files to the folder.
+        """
+        if fp[0] != '.':
+            raise ValueError(f'Invalid filepath: {fp}')
+
+        fp = fp.split('\\')[1:]
+        for i in range(len(fp)):
+            # Filename should be pathlike, final structure should be like a staircase.
+            # Folder1/
+            # Folder1/Folder2/
+            # Folder1/Folder2/text.txt
+            self.add_file("/".join(fp[:i + 1]) + '/', '')
+        return "/".join(fp[:i + 1]) + '/'
 
     def add_file(
             self,
@@ -48,7 +70,7 @@ class NewZipFile:
 
         ``fn`` is filename inside zip. It will be encoded in the same encoding specified in file creation.
 
-        ``fd`` is file's data. It can be string, bytes object, os.PathLike, text and binary stream.
+        ``fd`` is file's data. It can be string, bytes object, os.PathLike, text or binary stream.
         If it's os.PathLike, contents of the file path's leading to will be used.
 
         ``fp`` is file's path inside zip. '.' represents root. Every path should start from root.
@@ -62,11 +84,13 @@ class NewZipFile:
 
         if fp not in self.files:
             if fp[0] != '.':
-                raise ValueError(f'Invalid filepath {fp}')
-            self.files.update({fp: {}})
+                raise ValueError(f'Invalid filepath: {fp}')
+            fn = self.add_folder(fp) + fn
+            fp = '.'
 
         initial_fd = None  # Used to get a, m and c time of the file if fd is pathlike.
-        if path.isfile(fd):
+
+        if isinstance(fd, (str, bytes)) and path.isfile(fd):
             initial_fd = fd
             last_mod_time = datetime.fromtimestamp(path.getmtime(fd))
             with open(fd, 'rb') as f:
@@ -78,18 +102,15 @@ class NewZipFile:
         time = ((last_mod_time.year - 1980) << 25 | last_mod_time.month << 21 | last_mod_time.day << 16 |
                 last_mod_time.hour << 11 | last_mod_time.minute << 5 | last_mod_time.second >> 1)
 
-        if isinstance(fd, bytes):
-            crc: int = crc32(fd)
-        elif isinstance(fd, (TextIO, BinaryIO)):
-            crc: int = crc32(fd.read())
-            fd = fd.read().encode(encoding)
-        elif isinstance(fd, str):
+        if isinstance(fd, IOBase):
+            fd = fd.read()
+        if isinstance(fd, str):
             fd: bytes = fd.encode(encoding)
-            crc: int = crc32(fd)
-        else:
+        elif not isinstance(fd, bytes):
             raise TypeError(
                 f'Expected file data to be str, bytes, os.PathLike, io.TextIO or io.BinaryIO, not {type(fd).__name__}'
             )
+        crc: int = crc32(fd)
         uncompressed_size: int = len(fd)
 
         bit_flag = list('0000000000000000')
@@ -100,7 +121,7 @@ class NewZipFile:
                 bit_flag[2] = '1'
             elif level == MAXIMUM:
                 bit_flag[1] = '1'
-        if self.encoding == 'utf-8':
+        if self.encoding == 'utf-8' and fn[-1] != '/':
             bit_flag[11] = '1'  # Language encoding flag (EFS)
 
         compression_method: int = COMPRESSION_FROM_STR[compression]
@@ -217,10 +238,12 @@ class NewZipFile:
             extra_field=extra_filed,
             comment=comment
         )
-        ic(file, cd_header)
         self.files[fp][file.filename] = file
         self.cd_headers[fp][file.filename] = cd_header
         self.sizeof_CD += len(cd_header.encode(self.encoding))
+
+        self.files[fp] = {k: v for k, v in sorted(self.files[fp].items(), key=lambda item: item[0])}
+        self.cd_headers[fp] = {k: v for k, v in sorted(self.cd_headers[fp].items(), key=lambda item: item[0])}
 
     def save(self, fn: str, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', comment: str = ''):
         """Save new zip file with name ``fn`` at given ``path``.

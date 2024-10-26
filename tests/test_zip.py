@@ -35,6 +35,11 @@ class TestCase(unittest.TestCase):
         with ZipFile.open('folders.zip') as z:
             z.extract_all()
 
+    def test_add_folder(self):
+        z = ZipFile.new()
+        z.add_folder('.\\test1\\test2')
+        self.assertEqual(['test1/', 'test1/test2/'], list(z.files['.'].keys()))
+
     def test_new(self):
         zipfile = ZipFile.new()
         time = datetime.datetime.now()
@@ -60,6 +65,10 @@ class TestCase(unittest.TestCase):
             self.assertEqual(self.test_str, z.files[0].peek())
             self.assertEqual('Lorem', z.comment)
             self.assertEqual('LOREM2', z.files[0].comment)
+
+        zipfile = ZipFile.new()
+        zipfile.add_file('test.txt', 'TEXT', '.\\test1\\test2')
+        self.assertEqual(['test1/', 'test1/test2/', 'test1/test2/test.txt'], list(zipfile.files['.'].keys()))
 
 if __name__ == '__main__':
     unittest.main()
