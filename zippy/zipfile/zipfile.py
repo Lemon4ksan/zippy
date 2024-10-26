@@ -1,6 +1,7 @@
 from typing import BinaryIO, TextIO, Optional, Self
 from io import IOBase
 from os import PathLike, path, urandom
+from pathlib import Path
 from platform import system
 from datetime import datetime, UTC
 from zlib import crc32
@@ -34,17 +35,42 @@ class NewZipFile:
         self.files: dict[str | PathLike, dict[str, FileRaw]] = {'.': {}}
         self.cd_headers: dict[str | PathLike, dict[str, CDHeader]] = {'.': {}}
         self.sizeof_CD: int = 0
+        self._current_root = None
 
-    def add_folder(self, fp: str | PathLike[str] = '.') -> str:
-        """Add folder inside zip.
+    def add_folder(self, fd: Optional[str | PathLike[str]], fp: str | PathLike[str] = '.'):
+
+        if not path.isdir(fd):
+            raise ValueError('fd should be path to the folder, not to the file. Use add_file instead.')
+
+        folder = Path(fd)
+        if self._current_root is None:
+            self._current_root = fd
+
+        for file in folder.iterdir():
+            # We are removing the folder location from its absolute path to save the structure inside zip file
+            # fp is a predecending path
+            __path = fp + '\\' + str(file).removeprefix(str(path.commonpath([self._current_root, file]) + '\\'))
+            __path = __path.replace('\\' + file.name, '')
+            if file.is_dir():
+                self.add_folder(file, __path)
+            else:
+                self.add_file(file.name, str(file.absolute()), __path)
+
+        if self._current_root == fd:
+            self._current_root = None
+
+    def create_folder(self, fp: str | PathLike[str] = '.') -> str:
+        """Create folder inside zip.
 
         ``fp`` is file's path inside zip. '.' represents root. Every path should start from root.
 
         Returns string representing final path. Used to add new files to the folder.
         """
+
         if fp[0] != '.':
             raise ValueError(f'Invalid filepath: {fp}')
 
+        i = 0
         fp = fp.split('\\')[1:]
         for i in range(len(fp)):
             # Filename should be pathlike, final structure should be like a staircase.
@@ -52,6 +78,7 @@ class NewZipFile:
             # Folder1/Folder2/
             # Folder1/Folder2/text.txt
             self.add_file("/".join(fp[:i + 1]) + '/', '')
+
         return "/".join(fp[:i + 1]) + '/'
 
     def add_file(
@@ -85,7 +112,7 @@ class NewZipFile:
         if fp not in self.files:
             if fp[0] != '.':
                 raise ValueError(f'Invalid filepath: {fp}')
-            fn = self.add_folder(fp) + fn
+            fn = self.create_folder(fp) + fn
             fp = '.'
 
         initial_fd = None  # Used to get a, m and c time of the file if fd is pathlike.
@@ -98,22 +125,24 @@ class NewZipFile:
         elif last_mod_time is None:
             last_mod_time = datetime.now()
 
-        # This conversion is based on java8 source code
-        time = ((last_mod_time.year - 1980) << 25 | last_mod_time.month << 21 | last_mod_time.day << 16 |
-                last_mod_time.hour << 11 | last_mod_time.minute << 5 | last_mod_time.second >> 1)
-
         if isinstance(fd, IOBase):
-            fd = fd.read()
+            fd: str | bytes = fd.read()
         if isinstance(fd, str):
             fd: bytes = fd.encode(encoding)
         elif not isinstance(fd, bytes):
             raise TypeError(
                 f'Expected file data to be str, bytes, os.PathLike, io.TextIO or io.BinaryIO, not {type(fd).__name__}'
             )
+
         crc: int = crc32(fd)
         uncompressed_size: int = len(fd)
 
+        # This conversion is based on java8 source code
+        time = ((last_mod_time.year - 1980) << 25 | last_mod_time.month << 21 | last_mod_time.day << 16 |
+                last_mod_time.hour << 11 | last_mod_time.minute << 5 | last_mod_time.second >> 1)
+
         bit_flag = list('0000000000000000')
+
         if self.encryption != UNENCRYPTED:
             bit_flag[0] = '1'
         if compression in (DEFLATE, DEFLATE64):
@@ -121,8 +150,12 @@ class NewZipFile:
                 bit_flag[2] = '1'
             elif level == MAXIMUM:
                 bit_flag[1] = '1'
-        if self.encoding == 'utf-8' and fn[-1] != '/':
-            bit_flag[11] = '1'  # Language encoding flag (EFS)
+        try:
+            fd.decode('utf-8')
+            if self.encoding == 'utf-8' and fn[-1] != '/':
+                bit_flag[11] = '1'  # Language encoding flag (EFS)
+        except UnicodeDecodeError:
+            pass
 
         compression_method: int = COMPRESSION_FROM_STR[compression]
 
@@ -213,8 +246,8 @@ class NewZipFile:
             contents=fd
         )
 
-        # Currently extra_field_length, disk_number_start, internal_file_attrs,
-        # local_header_relative_offset and extra_field remain placeholders
+        # Currently disk_number_start, internal_file_attrs external_file_attrs
+        # and local_header_relative_offset remain placeholders
 
         cd_header = CDHeader(
             version_made_by=63,
@@ -265,7 +298,7 @@ class NewZipFile:
             comment=comment
         )
 
-        with open(__path, 'wb') as z:  # WIP
+        with open(__path, 'wb') as z:
             for file in self.files['.'].values():
                 z.write(b'PK\x03\x04' + file.encode(self.encoding))
             for header in self.cd_headers['.'].values():

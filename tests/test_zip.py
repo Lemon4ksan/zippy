@@ -35,9 +35,9 @@ class TestCase(unittest.TestCase):
         with ZipFile.open('folders.zip') as z:
             z.extract_all()
 
-    def test_add_folder(self):
+    def test_create_folder(self):
         z = ZipFile.new()
-        z.add_folder('.\\test1\\test2')
+        z.create_folder('.\\test1\\test2')
         self.assertEqual(['test1/', 'test1/test2/'], list(z.files['.'].keys()))
 
     def test_new(self):
@@ -69,6 +69,12 @@ class TestCase(unittest.TestCase):
         zipfile = ZipFile.new()
         zipfile.add_file('test.txt', 'TEXT', '.\\test1\\test2')
         self.assertEqual(['test1/', 'test1/test2/', 'test1/test2/test.txt'], list(zipfile.files['.'].keys()))
+
+    def test_add_folder(self):
+        z = ZipFile.new()
+        z.add_folder('.\\goodbyedpi-0.2.2', '.\\EXTRA FOLDER')
+        struct = ['EXTRA FOLDER/', 'EXTRA FOLDER/0_russia_update_blacklist_file.cmd', 'EXTRA FOLDER/1_russia_blacklist.cmd', 'EXTRA FOLDER/1_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/2_any_country.cmd', 'EXTRA FOLDER/2_any_country_dnsredir.cmd', 'EXTRA FOLDER/licenses/', 'EXTRA FOLDER/licenses/LICENSE-getline.txt', 'EXTRA FOLDER/licenses/LICENSE-goodbyedpi.txt', 'EXTRA FOLDER/licenses/LICENSE-uthash.txt', 'EXTRA FOLDER/licenses/LICENSE-windivert.txt', 'EXTRA FOLDER/licenses/test.zip', 'EXTRA FOLDER/russia-blacklist.txt', 'EXTRA FOLDER/service_install_russia_blacklist.cmd', 'EXTRA FOLDER/service_install_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/service_remove.cmd', 'EXTRA FOLDER/x86/', 'EXTRA FOLDER/x86/WinDivert.dll', 'EXTRA FOLDER/x86/WinDivert32.sys', 'EXTRA FOLDER/x86/WinDivert64.sys', 'EXTRA FOLDER/x86/goodbyedpi.exe', 'EXTRA FOLDER/x86_64/', 'EXTRA FOLDER/x86_64/WinDivert.dll', 'EXTRA FOLDER/x86_64/WinDivert64.sys', 'EXTRA FOLDER/x86_64/goodbyedpi.exe']
+        self.assertEqual(struct, list(z.files['.'].keys()))
 
 if __name__ == '__main__':
     unittest.main()

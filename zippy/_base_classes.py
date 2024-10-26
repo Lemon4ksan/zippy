@@ -37,7 +37,11 @@ class File:
     comment: str = ''
     specifications: Optional[list[Any]] = None
 
-    def extract(self, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', encoding: str = 'utf-8'):
+    def extract(
+            self,
+            __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.',
+            encoding: str = 'utf-8'
+    ) -> None:
         """Extract single file to given ``path``. If not specified, extracts to current working directory.
         If file couldn't be decoded using given ``encoding``, its byte representation will be extracted instead.
         """
@@ -109,14 +113,22 @@ class Archive:
         else:
             self.compression_method = compression_method
 
-    def extract_all(self, __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', encoding: str = 'utf-8'):
+    def extract_all(
+            self,
+            __path: int | str | bytes | PathLike[str] | PathLike[bytes] = '.',
+            encoding: str = 'utf-8'
+    ) -> None:
         """Extract all files from the archive to given ``path``. If not specified, extracts to current working directory.
         If file couldn't be decoded, its byte representation will be extracted instead.
         """
         for file in self.files:
             file.extract(__path, encoding)
 
-    def peek_all(self, encoding: str = 'utf-8', ignore_overflow: bool = False, char_limit: int = 8191) -> list[tuple[str, str | bytes]]:
+    def peek_all(
+            self,
+            encoding: str = 'utf-8',
+            ignore_overflow: bool = False, char_limit: int = 8191
+    ) -> list[tuple[str, str | bytes]]:
         """Decode files content. Returns a list of tuples, where first element is filename and second is its decoded content.
         If content could not be decoded, its byte representation will be used instead.
 
