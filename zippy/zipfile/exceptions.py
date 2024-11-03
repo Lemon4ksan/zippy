@@ -1,6 +1,9 @@
 class ZippyException(Exception):
     """Base class for all zippy exceptions."""
 
+class FileNotFound(ZippyException):
+    """File wasn't found."""
+
 class BadFile(ZippyException):
     """Bad file given to unpack."""
 

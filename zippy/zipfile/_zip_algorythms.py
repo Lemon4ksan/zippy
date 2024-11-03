@@ -2,6 +2,8 @@ import xz
 import bz2
 import deflate
 import zstandard
+from typing import AnyStr
+
 from .utils import pwexplode
 from .utils import LZ77
 from .utils import ZipEncrypt
@@ -17,6 +19,8 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
         encryption_method = 'Unencrypted'
         return encryption_method, contents
     else:
+        if not pwd:
+            raise WrongPassword('Zip file requires password to be unpacked.')
         if not v >= 20:
             raise BadFile('Incorrect version specified.')
             # This should be implemented but you will never see
@@ -38,11 +42,11 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
             # used on versions after 2.0. This can be used to test if the password
             # supplied is correct or not.
 
-            raise WrongPassword('given password is incorrect.')
+            raise WrongPassword('Given password is incorrect.')
 
         return encryption_method, b"".join(decrypted_content[12:])
 
-def decompress(compression_method: int, uncompressed_size: int, contents) -> tuple[str, bytes]:
+def decompress(compression_method: int, uncompressed_size: int, contents: bytes) -> tuple[str, bytes]:
     """Decompress ``contents``.
     Returns tuple with first element being compression method and second being decompressed data.
     """
@@ -77,7 +81,7 @@ def decompress(compression_method: int, uncompressed_size: int, contents) -> tup
         # eos = bit_flag[-2]
         # compression_method = 'LZMA'
         # contents = lzma.decompress(contents, ???)  # Doesn't work for some reason.
-        # Also don't know how to make it to use EOS.
+        # Also don't know how to make it use EOS.
         raise NotImplementedError('LZMA compression is not implemented yet.')
     elif compression_method == 19:
         compression_method = 'LZ77'
@@ -88,10 +92,12 @@ def decompress(compression_method: int, uncompressed_size: int, contents) -> tup
     elif compression_method == 95:
         compression_method = 'XZ'
         contents = xz.decompress(contents)
+    else:
+        raise BadFile('Unknown file compression method.')
 
     return compression_method, contents
 
-def compress(method: int, level: str, contents) -> bytes:
+def compress(method: int, level: str, contents: AnyStr) -> bytes:
     """Compress ``contents``. Returns compressed data."""
 
     if method in (8, 9):

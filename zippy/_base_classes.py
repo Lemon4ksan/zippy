@@ -6,7 +6,7 @@ from typing import Optional, Any
 
 @dataclass
 class File:
-    """Clean representation of the file.
+    """Final representation of the file.
 
     Attributes:
         file_name (:obj:`str`): Name of the file.
@@ -15,13 +15,13 @@ class File:
         encryption_method (:obj:`str`): Name of the encryption method. Unencrypted if none.
         compression_method (:obj:`str`): Name of the compression method. Stored if none.
         last_mod_time (:class:`datetime`, optional): Datetime of last modification of the file.
-            None if time is not specified, which shouldn't happen.
+            None if time is not specified.
         crc (:obj:`int`): CRC of the file.
         compressed_size (:obj:`int`): Compressed size of the file.
         uncompressed_size (:obj:`int`): Uncompressed size of the file.
         contents (:obj:`bytes`): Undecoded contents of the file.
-        specifications (:obj:`list`[:obj:`Any`]`): Miscelenious information about the
-            file that may vary on archive's structure.
+        specifications (:obj:`list`[:obj:`Any`]`, optional): Miscelenious information about the
+            file that may vary based on archive's structure.
     """
 
     file_name: str
@@ -66,7 +66,7 @@ class File:
             with open(__path, 'wb') as f:
                 f.write(contents)
 
-    def peek(self, encoding: str = 'utf-8', ignore_overflow: bool = False, char_limit: int = 8191) -> str | bytes:
+    def peek(self, encoding: str = 'utf-8', ignore_overflow: bool = True, char_limit: int = 8191) -> str | bytes:
         """Decode file contents. If content couldn't be decoded using given
         ``encoding``, its byte representation will be used instead.
 
@@ -98,11 +98,13 @@ class Archive:
             self,
             files: list[File],
             comment: str,
-            total_entries: int
+            total_entries: int,
+            encoding: str
     ):
         self.files: list[File] = files
         self.comment: str = comment
         self.total_entries: int = total_entries
+        self.encoding: str = encoding
 
         compression_method = files[0].compression_method
         for file in files:
@@ -127,12 +129,14 @@ class Archive:
     def peek_all(
             self,
             encoding: str = 'utf-8',
-            ignore_overflow: bool = False, char_limit: int = 8191
+            ignore_overflow: bool = True,
+            char_limit: int = 8191
     ) -> list[tuple[str, str | bytes]]:
-        """Decode files content. Returns a list of tuples, where first element is filename and second is its decoded content.
-        If content could not be decoded, its byte representation will be used instead.
+        """Decode files content. Returns a list of tuples, where first element is filename and
+        second is its decoded content. If content could not be decoded, its byte representation will be used instead.
 
-        If ``ignore_overflow`` is set to False, content that exceeds ``char_limit`` characters (bytes) will be partially shown.
+        If ``ignore_overflow`` is set to False, content that exceeds ``char_limit``
+        characters (bytes) will be partially shown.
         """
         files = []
         for file in self.files:
