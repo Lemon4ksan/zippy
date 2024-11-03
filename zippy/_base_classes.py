@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 from os import PathLike, mkdir, path
-from typing import Optional, Any
+from abc import abstractmethod, ABCMeta
+from typing import Optional, Any, TextIO, BinaryIO
 
 
 @dataclass
@@ -89,6 +90,116 @@ class File:
                 return content[:char_limit // 32] + b' |...| File too large to display'
         else:
             return content
+
+
+class NewArchive:
+    """Abstract class with methods that should be implemented in any archive type."""
+
+    @abstractmethod
+    def get_structure(self, fp: str | PathLike[str] = '.') -> list[str]:
+        """Get structure of the archive. If ``fp`` is specified, returns the structure of given folder."""
+        raise NotImplementedError('This method should be implemented in the child class.')
+
+    @abstractmethod
+    def add_file(
+            self,
+            fn: str,
+            fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO,
+            fp: str | PathLike[str] = '.',
+            compression: str = 'AnyStr',
+            level: str = 'AnyStr',
+            *,
+            last_mod_time: Optional[datetime] = None,
+            encoding: str = 'utf-8'
+    ) -> None:
+        """Add file to archive.
+
+        ``fn`` is filename inside archive.
+
+        ``fd`` is file's data. It can be string, bytes object, os.PathLike, text or binary stream.
+        If it's os.PathLike, contents of the file path is leading to will be used.
+
+        ``fp`` is file's path inside archive. '.' represents root. Every path should start from root.
+
+        ``encoding`` is encoding in wich file's data will be encoded.
+
+        If ``last_mod_date`` is not provided and fd is not os.PathLike, current time will be used instead.
+        """
+        raise NotImplementedError('This method should be implemented in the child class.')
+
+    @abstractmethod
+    def edit_file(
+            self,
+            fn: str,
+            fd: str | bytes | TextIO | BinaryIO,
+            fp: str | PathLike[str] = '.'
+    ) -> None:
+        """Edit file inside archive.
+
+        ``fn`` is filename to be edited.
+
+        ``fd`` is filedata that will replace previous one.
+
+        ``fp`` is path to the folder in which target file is located.
+        '.' represents root. Every path should start from root.
+
+        Raises FileNotFound exception if file is not present at given path.
+        """
+        raise NotImplementedError('This method should be implemented in the child class.')
+
+    @abstractmethod
+    def remove_file(self, fn: str, fp: str | PathLike[str] = '.') -> None:
+        """Remove file inside archive.
+
+        ``fn`` is filename to be deleted.
+
+        ``fp`` is path to the folder in which target file is located.
+        '.' represents root. Every path should start from root.
+        """
+        raise NotImplementedError('This method should be implemented in the child class.')
+
+    @abstractmethod
+    def create_folder(self, fp: str | PathLike[str] = '.') -> str:
+        """Create folder inside archive.
+
+        ``fp`` is folder's path. '.' represents root. Every path should start from root.
+
+        Returns string representing final path. Used to add new files to the folder.
+        """
+        raise NotImplementedError('This method should be implemented in the child class.')
+
+    @abstractmethod
+    def add_folder(self, fd: str | PathLike[str], fp: str | PathLike[str] = '.') -> None:
+        """Add folder from disk to the archive.
+
+        ``fd`` is path to the file that will be added. It can be both absolute and relative.
+
+        ``fp`` is file's path inside archive. '.' represents root. Every path should start from root.
+        """
+        raise NotImplementedError('This method should be implemented in the child class.')
+
+    @abstractmethod
+    def remove_folder(self, fp: str | PathLike[str] = '.') -> list[str]:
+        """Remove folder and its contents.
+
+        ``fp`` is path to the target folder. '.' represents root. Every path should start from root.
+
+        Returns list of paths of deleted files and folders.
+        """
+        raise NotImplementedError('This method should be implemented in the child class.')
+
+    @abstractmethod
+    def save(
+            self,
+            fn: str,
+            fp: int | str | bytes | PathLike[str] | PathLike[bytes] = '.',
+            comment: str = ''
+    ) -> None:
+        """Save new archive file with name ``fn`` at given ``fp``.
+
+        Additional ``comment`` can be applied to the file.
+        """
+        raise NotImplementedError('This method should be implemented in the child class.')
 
 
 class Archive:
