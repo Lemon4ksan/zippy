@@ -65,9 +65,12 @@ class TestCase1(unittest.TestCase):
 
         zipfile = ZipFile.new()
         zipfile.add_file('test.txt', 'TEXT', '.\\test1\\test2')
-        self.assertEqual(['test1/', 'test1/test2/', 'test1/test2/test.txt'], list(zipfile._files.keys()))
+        self.assertEqual(['.\\test1\\', '.\\test1\\test2\\', '.\\test1\\test2\\test.txt'], zipfile.get_structure())
         zipfile.remove_file('test.txt', '.\\test1\\test2')
-        self.assertEqual(['test1/', 'test1/test2/'], list(zipfile._files.keys()))
+        self.assertEqual(['.\\test1\\', '.\\test1\\test2\\'], zipfile.get_structure())
+        zipfile.add_file('test.txt', 'TEXT', '.\\test1\\test2')
+        zipfile.remove_folder('.\\test1\\test2')
+        self.assertEqual(['.\\test1\\'], zipfile.get_structure())
 
 class TestCase2(unittest.TestCase):
 

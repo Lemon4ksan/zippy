@@ -1,11 +1,11 @@
 from datetime import datetime, UTC
 from io import IOBase
+from multiprocessing import Pool, cpu_count
 from os import PathLike, path, urandom
 from pathlib import Path
 from platform import system
 from typing import BinaryIO, TextIO, Optional, Self, AnyStr
 from zlib import crc32
-from multiprocessing import Pool, cpu_count
 
 from .._base_classes import Archive, File, NewArchive
 from .utils.ZipEncrypt import ZipEncrypter
@@ -45,7 +45,7 @@ class NewZipFile(NewArchive):
 
         _struct = []
         for _p in self._files.keys():
-            if fp[1:] in _p[:len(fp)] or fp == '.':
+            if fp in _p[:len(fp)] or fp == '.':
                 _struct.append('.\\' + _p.replace('/', '\\'))
 
         return _struct
@@ -419,31 +419,27 @@ class NewZipFile(NewArchive):
         # with different file distribution. (6 cores)
 
         # seconds - amount of files required to use mp:
-        # 42.91 -  6 /  6
-        # 40.15 - 12 / 12
-        # 36.61 - 24 / 24
-        # 33.13 - 24 / 36
+        # 39.91 -  6 /  6
+        # 37.15 - 12 / 12
+        # 33.61 - 24 / 24
+        # 30.13 - 24 / 36
         # 113.6 - 36 / 36
 
         # 7zip speed is 3 seconds...
 
-        if len(folders) >= 24:
+        if len(folders) >= 24 or len(files) >= 36:
             with Pool(cpu_count()) as pool:
                 for result in pool.starmap(self._mp_add_folder, folders):
+                    self._files.update(result[0])
+                    self._cd_headers.update(result[1])
+                    self._sizeof_CD += result[2]
+                for result in pool.starmap(self._mp_add_file, files):
                     self._files.update(result[0])
                     self._cd_headers.update(result[1])
                     self._sizeof_CD += result[2]
         else:
             for _folder in folders:
                 self.add_folder(_folder[0], _folder[1])
-
-        if len(files) >= 36:
-            with Pool(cpu_count()) as pool:
-                for result in pool.starmap(self._mp_add_file, files):
-                    self._files.update(result[0])
-                    self._cd_headers.update(result[1])
-                    self._sizeof_CD += result[2]
-        else:
             for _file in files:
                 self.add_file(*_file)
 
@@ -473,15 +469,21 @@ class NewZipFile(NewArchive):
 
     def remove_folder(self, fp: str | PathLike[str] = '.') -> list[str]:
 
+        if fp[0] != '.':
+            raise ValueError(f'Invalid filepath: {fp}')
+        if fp != '.':
+            fp = fp.removeprefix('.\\').replace('\\', '/') + '/'
+
         deletes = []
         try:
             for _p in self._files.keys():
-                if fp[1:] in _p[:len(fp)] or fp == '.':
-                    self._files.pop(_p)
-                    deletes.append('.\\' + _p.replace('/', '\\'))
+                if fp in _p[:len(fp)] or fp == '.':
+                    deletes.append(_p)
         except KeyError:
             raise FileNotFound(f'Folder {fp} doesn\'t exist.')
         finally:  # Return successfuly deleted files
+            for file in deletes:
+                self._files.pop(file)
             return deletes
 
     def save(self, fn: str, fp: int | str | bytes | PathLike[str] | PathLike[bytes] = '.', comment: str = '') -> None:

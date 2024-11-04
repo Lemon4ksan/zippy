@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from os import PathLike, mkdir, path
-from abc import abstractmethod, ABCMeta
+from abc import abstractmethod
 from typing import Optional, Any, TextIO, BinaryIO
 
 
@@ -93,7 +93,7 @@ class File:
 
 
 class NewArchive:
-    """Abstract class with methods that should be implemented in any archive type."""
+    """Abstract class with methods that should be implemented in any new archive type."""
 
     @abstractmethod
     def get_structure(self, fp: str | PathLike[str] = '.') -> list[str]:
