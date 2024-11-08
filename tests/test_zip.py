@@ -1,4 +1,3 @@
-import datetime
 import unittest
 from zippy.zipfile.exceptions import *
 from zippy import ZipFile
@@ -34,18 +33,16 @@ class TestCase1(unittest.TestCase):
 
     def test_create_folder(self):
         z = ZipFile.new()
-        z.create_folder('.\\test1\\test2')
+        z.create_folder('test2', '.\\test1')
         self.assertEqual(['test1/', 'test1/test2/'], list(z._files.keys()))
 
     def test_new(self):
         zipfile = ZipFile.new()
-        time = datetime.datetime.now()
         zipfile.add_file(
             'lorem ipsum.txt',
             self.test_str,
             compression=DEFLATE,
             level=MAXIMUM,
-            last_mod_time=time,
             comment='LOREM'
         )
         zipfile.add_file(
@@ -53,7 +50,6 @@ class TestCase1(unittest.TestCase):
             '.\\lorem.txt',
             compression=DEFLATE64,
             level=MAXIMUM,
-            last_mod_time=time,
             comment='LOREM2'
         )
         zipfile.save('new.zip', comment='Lorem')
@@ -74,7 +70,7 @@ class TestCase1(unittest.TestCase):
 
 class TestCase2(unittest.TestCase):
 
-    def test_add_folder(self):
+    def test_add_directory(self):
         z = ZipFile.new()
         z.add_folder('.\\goodbyedpi-0.2.2', '.\\EXTRA FOLDER')
         struct = ['EXTRA FOLDER/', 'EXTRA FOLDER/0_russia_update_blacklist_file.cmd', 'EXTRA FOLDER/1_russia_blacklist.cmd', 'EXTRA FOLDER/1_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/2_any_country.cmd', 'EXTRA FOLDER/2_any_country_dnsredir.cmd', 'EXTRA FOLDER/licenses/', 'EXTRA FOLDER/licenses/LICENSE-getline.txt', 'EXTRA FOLDER/licenses/LICENSE-goodbyedpi.txt', 'EXTRA FOLDER/licenses/LICENSE-uthash.txt', 'EXTRA FOLDER/licenses/LICENSE-windivert.txt', 'EXTRA FOLDER/licenses/test.zip', 'EXTRA FOLDER/russia-blacklist.txt', 'EXTRA FOLDER/service_install_russia_blacklist.cmd', 'EXTRA FOLDER/service_install_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/service_remove.cmd', 'EXTRA FOLDER/x86/', 'EXTRA FOLDER/x86/WinDivert.dll', 'EXTRA FOLDER/x86/WinDivert32.sys', 'EXTRA FOLDER/x86/WinDivert64.sys', 'EXTRA FOLDER/x86/goodbyedpi.exe', 'EXTRA FOLDER/x86_64/', 'EXTRA FOLDER/x86_64/WinDivert.dll', 'EXTRA FOLDER/x86_64/WinDivert64.sys', 'EXTRA FOLDER/x86_64/goodbyedpi.exe']

@@ -23,7 +23,7 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
             raise WrongPassword('Zip file requires password to be unpacked.')
         if not v >= 20:
             raise BadFile('Incorrect version specified.')
-            # This should be implemented but you will never see
+            # This should be implemented, but you will never see encrypted file before 2.0
 
         encryption_method = 'ZipCrypto'
         zd = ZipEncrypt.ZipDecrypter(pwd)

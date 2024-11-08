@@ -4,6 +4,7 @@ from typing import BinaryIO, Optional
 
 from .._base_classes import File
 from ._zip_algorythms import decrypt, decompress
+from .compressions import *
 from .exceptions import *
 
 @dataclass
@@ -45,10 +46,10 @@ class FileRaw:
         contents = file.read(compressed_size)
 
         if bit_flag[3] == '1':
-            _t = file.read(4)
-            if _t == b'PK\x07\x08':  # This signature is not official
-                _t = file.read(4)
-            crc = int.from_bytes(_t, 'little')
+            _s = file.read(4)
+            if _s == b'PK\x07\x08':  # This signature is unofficial
+                _s = file.read(4)
+            crc = int.from_bytes(_s, 'little')
             compressed_size = int.from_bytes(file.read(4), 'little')
             uncompressed_size = int.from_bytes(file.read(4), 'little')
         if bit_flag[13] == '1':
@@ -87,12 +88,26 @@ class FileRaw:
         except ValueError:
             last_mod_time = last_mod_date = None
 
+        if compression_method in (DEFLATE, DEFLATE64):
+            match self.bit_flag[1:3]:
+                case '00':
+                    compression_level = NORMAL
+                case '10':
+                    compression_level = MAXIMUM
+                case '01':
+                    compression_level = FAST
+                case '11':
+                    compression_level = FAST
+        else:
+            compression_level = None
+
         return File(
             self.filename,
             self.filename[-1] == '/',
             self.version_needed_to_exctract,
             encryption_method,
             compression_method,
+            compression_level,
             datetime.combine(last_mod_date, last_mod_time) if last_mod_time is not None else None,
             self.crc,
             self.compressed_size,
@@ -214,6 +229,7 @@ class CDHeader:
         byte_str += self.extra_field
         byte_str += self.comment.encode(encoding)
         return byte_str
+
 
 @dataclass
 class CDEnd:
