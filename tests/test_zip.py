@@ -4,7 +4,10 @@ from zippy import ZipFile
 from zippy.compressions import *
 
 from os import chdir
-chdir('.\\zip_files')
+try:
+    chdir('.\\zip_files')
+except FileNotFoundError:
+    chdir('.\\tests\\zip_files\\')
 
 class TestCase1(unittest.TestCase):
 
@@ -38,7 +41,7 @@ class TestCase1(unittest.TestCase):
 
     def test_new(self):
         zipfile = ZipFile.new()
-        zipfile.add_file(
+        zipfile.create_file(
             'lorem ipsum.txt',
             self.test_str,
             compression=DEFLATE,
@@ -60,17 +63,18 @@ class TestCase1(unittest.TestCase):
             self.assertEqual('LOREM2', z.files[0].comment)  # Replacing already existing file check
 
         zipfile = ZipFile.new()
-        zipfile.add_file('test.txt', 'TEXT', '.\\test1\\test2')
+        zipfile.create_file('test.txt', 'TEXT', '.\\test1\\test2')
         self.assertEqual(['.\\test1\\', '.\\test1\\test2\\', '.\\test1\\test2\\test.txt'], zipfile.get_structure())
         zipfile.remove_file('test.txt', '.\\test1\\test2')
         self.assertEqual(['.\\test1\\', '.\\test1\\test2\\'], zipfile.get_structure())
-        zipfile.add_file('test.txt', 'TEXT', '.\\test1\\test2')
+        zipfile.create_file('test.txt', 'TEXT', '.\\test1\\test2')
         zipfile.remove_folder('.\\test1\\test2')
         self.assertEqual(['.\\test1\\'], zipfile.get_structure())
 
 class TestCase2(unittest.TestCase):
 
     def test_add_directory(self):
+        self.maxDiff = None
         z = ZipFile.new()
         z.add_folder('.\\goodbyedpi-0.2.2', '.\\EXTRA FOLDER')
         struct = ['EXTRA FOLDER/', 'EXTRA FOLDER/0_russia_update_blacklist_file.cmd', 'EXTRA FOLDER/1_russia_blacklist.cmd', 'EXTRA FOLDER/1_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/2_any_country.cmd', 'EXTRA FOLDER/2_any_country_dnsredir.cmd', 'EXTRA FOLDER/licenses/', 'EXTRA FOLDER/licenses/LICENSE-getline.txt', 'EXTRA FOLDER/licenses/LICENSE-goodbyedpi.txt', 'EXTRA FOLDER/licenses/LICENSE-uthash.txt', 'EXTRA FOLDER/licenses/LICENSE-windivert.txt', 'EXTRA FOLDER/licenses/test.zip', 'EXTRA FOLDER/russia-blacklist.txt', 'EXTRA FOLDER/service_install_russia_blacklist.cmd', 'EXTRA FOLDER/service_install_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/service_remove.cmd', 'EXTRA FOLDER/x86/', 'EXTRA FOLDER/x86/WinDivert.dll', 'EXTRA FOLDER/x86/WinDivert32.sys', 'EXTRA FOLDER/x86/WinDivert64.sys', 'EXTRA FOLDER/x86/goodbyedpi.exe', 'EXTRA FOLDER/x86_64/', 'EXTRA FOLDER/x86_64/WinDivert.dll', 'EXTRA FOLDER/x86_64/WinDivert64.sys', 'EXTRA FOLDER/x86_64/goodbyedpi.exe']

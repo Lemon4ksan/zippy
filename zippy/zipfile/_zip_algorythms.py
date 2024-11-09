@@ -2,22 +2,23 @@ import xz
 import bz2
 import deflate
 import zstandard
-from typing import AnyStr
+from os import urandom
+from typing import Optional
 
 from .utils import pwexplode
-from .utils import LZ77
-from .utils import ZipEncrypt
+from .utils import LZ77 as LZ77_module
+from .utils.ZipEncrypt import ZipDecrypter, ZipEncrypter
 from zippy.compressions import *
 from zippy.exceptions import *
 
-def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple[str, bytes]:
-    """Decrypt ``contents``.
+def decrypt(bit_flag: str, v: int, crc: int, pwd: Optional[str], data: bytes) -> tuple[str, bytes]:
+    """Decrypt ``data``.
     Returns tuple with first element being encryption method and second being decrypted data.
     """
 
     if bit_flag[0] == '0':
         encryption_method = 'Unencrypted'
-        return encryption_method, contents
+        return encryption_method, data
     else:
         if not pwd:
             raise WrongPassword('Zip file requires password to be unpacked.')
@@ -26,8 +27,8 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
             # This should be implemented, but you will never see encrypted file before 2.0
 
         encryption_method = 'ZipCrypto'
-        zd = ZipEncrypt.ZipDecrypter(pwd)
-        decrypted_content = list(map(zd, contents))
+        zd = ZipDecrypter(pwd)
+        decrypted_content = list(map(zd, data))
         decryption_header = decrypted_content[:12]
 
         # Each encrypted file has an extra 12 bytes stored at the start
@@ -46,6 +47,14 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple
 
         return encryption_method, b"".join(decrypted_content[12:])
 
+def encrypt(data: bytes, pwd: Optional[str], crc: int) -> bytes:
+    """Encrypt ``data``. Returns encrypted data."""
+
+    ze = ZipEncrypter(pwd)
+    check_byte = crc.to_bytes(4, 'little')[-1]
+    encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
+    return encryption_header + b"".join(map(ze, data))
+
 def decompress(compression_method: int, uncompressed_size: int, contents: bytes) -> tuple[str, bytes]:
     """Decompress ``contents``.
     Returns tuple with first element being compression method and second being decompressed data.
@@ -54,7 +63,7 @@ def decompress(compression_method: int, uncompressed_size: int, contents: bytes)
     # Note that values past 14 are ignored according to Info-ZIP note, 20040528.
     # They don't have practical application.
     if compression_method == 0:
-        compression_method = 'Stored'
+        method = 'Stored'
     elif compression_method in range(1, 6):
         raise NotImplementedError('Shrinking and Reducing are not implemented yet.')
     elif compression_method == 6:
@@ -62,18 +71,18 @@ def decompress(compression_method: int, uncompressed_size: int, contents: bytes)
     elif compression_method == 7:
         raise Deprecated('Tokenizing is not used by PKZIP.')
     elif compression_method == 8:
-        compression_method = 'Deflate'
+        method = 'Deflate'
         contents = deflate.deflate_decompress(contents, uncompressed_size)
     elif compression_method == 9:
-        compression_method = 'Deflate64'
+        method = 'Deflate64'
         contents = deflate.deflate_decompress(contents, uncompressed_size)
     elif compression_method == 10:
-        compression_method = 'PKWARE Data Compression Library Imploding'
+        method = 'PKWARE Data Compression Library Imploding'
         contents = pwexplode.explode(contents)  # Untested
     elif compression_method == 11:
         raise ReservedValue('Compression method 11 is reserved.')
     elif compression_method == 12:
-        compression_method = 'BZIP2'
+        method = 'BZIP2'
         contents = bz2.decompress(contents)
     elif compression_method == 13:
         raise ReservedValue('Compression method 13 is reserved.')
@@ -84,54 +93,53 @@ def decompress(compression_method: int, uncompressed_size: int, contents: bytes)
         # Also don't know how to make it use EOS.
         raise NotImplementedError('LZMA compression is not implemented yet.')
     elif compression_method == 19:
-        compression_method = 'LZ77'
-        contents = LZ77.decompress(contents)  # Untested
+        method = 'LZ77'
+        contents = LZ77_module.decompress(contents)  # Untested
     elif compression_method == 93:
-        compression_method = 'Zstandart'
+        method = 'Zstandart'
         contents = zstandard.decompress(contents)
     elif compression_method == 95:
-        compression_method = 'XZ'
+        method = 'XZ'
         contents = xz.decompress(contents)
     else:
         raise BadFile('Unknown file compression method.')
 
-    return compression_method, contents
+    return method, contents
 
-def compress(method: int, level: str, contents: AnyStr) -> bytes:
-    """Compress ``contents``. Returns compressed data."""
+def compress(method: int, level: str, data: bytes) -> bytes:
+    """Compress ``data``. Returns compressed data."""
 
     if method in (8, 9):
         if level == FAST:
-            level = 3
+            level_value = 3
         elif level == NORMAL:
-            level = 6
+            level_value = 6
         elif level == MAXIMUM:
-            level = 12
+            level_value = 12
         else:
             raise ValueError(f'Unknown compression level {level}.')
-        contents = deflate.deflate_compress(contents, level)
+        return deflate.deflate_compress(data, level_value)
     # elif compression_method == 10:
     #     compression_method = 'PKWARE Data Compression Library Imploding'
     #     contents = pwexplode.explode(contents)  # Untested
     elif method == 12:
-        contents = bz2.compress(contents)
+        return bz2.compress(data)
     # elif compression_method == 14:
         # eos = bit_flag[-2]
         # compression_method = 'LZMA'
         # contents = lzma.decompress(contents, ???)  # Doesn't work for some reason.
         # Also don't know how to make it to use EOS.
         # raise NotImplementedError('LZMA compression is not implemented yet.')
-    # elif compression_method == 19:
-    #     compression_method = 'LZ77'
-    #     contents = LZ77.decompress(contents)  # Untested
+    # elif method == 19:
+    #     return LZ77_module.compress(data)  # Untested
     elif method == 93:
-        contents = zstandard.decompress(contents)
+        return zstandard.compress(data)
     elif method == 95:
-        contents = xz.decompress(contents)
+        return xz.compress(data)
     # elif compression_method == 98:
         # compression_method = 'PPMd'  # Docs says that only version I, Rev 1 of PPMd is supported
         # maybe that's the reason it doesn't work
         # contents = pyppmd.decompress(contents, mem_size=uncompressed_size)
         # raise NotImplementedError('PPMd compression is not implemented yet.')
-
-    return contents
+    else:
+        return data

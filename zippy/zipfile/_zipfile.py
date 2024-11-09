@@ -15,8 +15,8 @@ class FileRaw:
     version_needed_to_exctract: int
     bit_flag: str
     compression_method: int
-    last_mod_time: int
-    last_mod_date: int
+    last_mod_time: bytes
+    last_mod_date: bytes
     crc: int
     compressed_size: int
     uncompressed_size: int
@@ -28,28 +28,28 @@ class FileRaw:
 
     @classmethod
     def __init_raw__(cls, file: BinaryIO, encoding: str):
-        version = [byte for byte in file.read(2)]
-        version_needed_to_exctract = version[0]
+        version: list[int] = [byte for byte in file.read(2)]
+        version_needed_to_exctract: int = version[0]
         if version[1] != 0:  # This byte is unused
             raise BadFile('Unknown version value')
-        bit_flag = "".join("".join(format(bit, '0>8b')[::-1]) for bit in file.read(2))
-        compression_method = int.from_bytes(file.read(2), 'little')
-        last_mod_time = int.from_bytes(file.read(2), 'little')
-        last_mod_date = int.from_bytes(file.read(2), 'little')
-        crc = int.from_bytes(file.read(4), 'little')
-        compressed_size = int.from_bytes(file.read(4), 'little')
-        uncompressed_size = int.from_bytes(file.read(4), 'little')
-        filename_length = int.from_bytes(file.read(2), 'little')
-        extra_field_length = int.from_bytes(file.read(2), 'little')
-        filename = file.read(filename_length).decode(encoding)
-        extra_field = file.read(extra_field_length)
+        bit_flag: str = "".join("".join(format(bit, '0>8b')[::-1]) for bit in file.read(2))
+        compression_method: int = int.from_bytes(file.read(2), 'little')
+        last_mod_time: bytes = file.read(2)
+        last_mod_date: bytes = file.read(2)
+        crc: int = int.from_bytes(file.read(4), 'little')
+        compressed_size: int = int.from_bytes(file.read(4), 'little')
+        uncompressed_size: int = int.from_bytes(file.read(4), 'little')
+        filename_length: int = int.from_bytes(file.read(2), 'little')
+        extra_field_length: int = int.from_bytes(file.read(2), 'little')
+        filename: str = file.read(filename_length).decode(encoding)
+        extra_field: bytes = file.read(extra_field_length)
         if compressed_size == 4_294_967_295 and extra_field[:2] == b'\x01\x00':  # zip64
             uncompressed_size = int.from_bytes(extra_field[4:12], 'little')
             compressed_size = int.from_bytes(extra_field[12:20], 'little')
-        contents = file.read(compressed_size)
+        contents: bytes = file.read(compressed_size)
 
         if bit_flag[3] == '1':
-            _s = file.read(4)
+            _s: bytes = file.read(4)
             if _s == b'PK\x07\x08':  # This signature is unofficial
                 _s = file.read(4)
             crc = int.from_bytes(_s, 'little')
@@ -79,17 +79,21 @@ class FileRaw:
         encryption_method, contents = decrypt(
             self.bit_flag, self.version_needed_to_exctract, self.crc, pwd, self.contents
         )
-
+    
         compression_method, contents = decompress(self.compression_method, self.uncompressed_size, contents)
+
+        last_mod_date = int.from_bytes(self.last_mod_date, 'little')
+        last_mod_time = int.from_bytes(self.last_mod_time, 'little')
 
         # This conversion is based on java8 source code.
         try:
-            last_mod_time = time((self.last_mod_time >> 11) & 0x1F, (self.last_mod_time >> 5) & 0x3F,
-                                 (self.last_mod_time << 1) & 0x3E)
-            last_mod_date = date((self.last_mod_date >> 9) + 1980, (self.last_mod_date >> 5) & 0xF,
-                                 self.last_mod_date & 0x1F)
+            decoded_last_mod_time = time((last_mod_time >> 11) & 0x1F, (last_mod_time >> 5) & 0x3F,
+                                 (last_mod_time << 1) & 0x3E)
+            decoded_last_mod_date = date((last_mod_date >> 9) + 1980, (last_mod_date >> 5) & 0xF,
+                                 last_mod_date & 0x1F)
+            final_last_mod_time = datetime.combine(decoded_last_mod_date, decoded_last_mod_time)
         except ValueError:
-            last_mod_time = last_mod_date = None
+            final_last_mod_time = None
 
         if compression_method in (DEFLATE, DEFLATE64):
             match self.bit_flag[1:3]:
@@ -102,7 +106,7 @@ class FileRaw:
                 case '11':
                     compression_level = FAST
         else:
-            compression_level = None
+            compression_level = NORMAL
 
         return File(
             self.filename,
@@ -111,7 +115,7 @@ class FileRaw:
             encryption_method,
             compression_method,
             compression_level,
-            datetime.combine(last_mod_date, last_mod_time) if last_mod_time is not None else None,
+            final_last_mod_time,
             self.crc,
             self.compressed_size,
             self.uncompressed_size,
@@ -147,8 +151,8 @@ class CDHeader:
     version_needed_to_exctract: int
     bit_flag: str
     compression_method: int
-    last_mod_time: int
-    last_mod_date: int
+    last_mod_time: bytes
+    last_mod_date: bytes
     crc: int
     compressed_size: int
     uncompressed_size: int
@@ -170,8 +174,8 @@ class CDHeader:
         version_needed_to_exctract = int.from_bytes(file.read(2), 'little')
         bit_flag = "".join("".join(format(bit, '0>8b')[::-1]) for bit in file.read(2))
         compression_method = int.from_bytes(file.read(2), 'little')
-        last_mod_time = int.from_bytes(file.read(2), 'little')
-        last_mod_date = int.from_bytes(file.read(2), 'little')
+        last_mod_time = file.read(2)
+        last_mod_date = file.read(2)
         crc = int.from_bytes(file.read(4), 'little')
         compressed_size = int.from_bytes(file.read(4), 'little')
         uncompressed_size = int.from_bytes(file.read(4), 'little')

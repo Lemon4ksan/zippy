@@ -15,7 +15,7 @@ class File:
         version_needed_to_exctract (:obj:`int`): Minimal version of zip required to unpack.
         encryption_method (:obj:`str`): Name of the encryption method. 'Unencrypted' if none.
         compression_method (:obj:`str`): Name of the compression method. 'Stored' if none.
-        compression_level (:obj:`str`, optional): Level of compression.
+        compression_level (:obj:`str`): Level of compression.
         last_mod_time (:class:`datetime`, optional): Datetime of last modification of the file.
             None if time is not specified.
         crc (:obj:`int`): CRC of the file.
@@ -31,7 +31,7 @@ class File:
     version_needed_to_exctract: int
     encryption_method: str
     compression_method: str
-    compression_level: Optional[str]
+    compression_level: str
     last_mod_time: Optional[datetime]
     crc: int
     compressed_size: int
@@ -112,52 +112,74 @@ class NewArchive(metaclass=ABCMeta):
         return self._encryption
 
     @abstractmethod
-    def add_file(
+    def create_file(
             self,
             fn: str,
-            fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO,
-            fp: str | PathLike[str] = '.',
+            fd: str | bytes | TextIO | BinaryIO,
+            fp: str = '.',
             compression: str = 'AnyStr',
             level: str = 'AnyStr',
-            encoding: str = 'utf-8'
+            encoding: str = 'utf-8',
+            comment: str = ''
     ) -> None:
-        """Add file with name ``fn`` and data ``fd`` to archive in ``fp`` directory.
+        """Create file ``fn`` in ``fp`` directory with data ``fd`` inside archive. It will be compressed with
+        ``compression`` method with ``level`` strength if it's supported.
 
-        ``fd`` can be string, bytes object, os.PathLike, text or binary stream.
-        If it's os.PathLike, contents of the file path is leading to will be used.
-        If it's text stream, content will be encoded with given ``encoding``.
+        ``fd`` is a text or byte string or a data stream.
 
         ``fp`` must start from '.' (root).
 
-        ``level`` is only used for Deflate and Deflate64 compression.
+        Additional ``comment`` can be applied to the file.
+        """
+
+    @abstractmethod
+    def add_file(
+            self,
+            fn: str,
+            fd: str | bytes | PathLike[str] | PathLike[bytes],
+            fp: str = '.',
+            compression: str = 'AnyStr',
+            level: str = 'AnyStr',
+            encoding: str = 'utf-8',
+            comment: str = ''
+    ) -> None:
+        """Add file ``fd`` to archive in ``fp`` directory with name ``fn``. It will be compressed with
+        ``compression`` method with ``level`` strength if it's supported.
+
+        ``fd`` is a text or byte string giving the name (and the path if the file
+        isn't in the current working directory) of the file to be opened.
+
+        ``fp`` must start from '.' (root).
+
+        Additional ``comment`` can be applied to the file.
         """
 
     @abstractmethod
     def edit_file(
             self,
             fn: str,
-            fp: str | PathLike[str],
-            fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO
+            fp: str,
+            fd: str | bytes | TextIO | BinaryIO
     ) -> None:
-        """Replace file with name ``fn`` inside archive in ``fp`` directory with new ``fd`` data.
+        """Replace file ``fn`` inside archive in ``fp`` directory with new ``fd`` data.
 
         ``fp`` must start from '.' (root).
 
-        ``fd`` can be string, bytes object, os.PathLike, text or binary stream.
-        If it's os.PathLike, contents of the file path is leading to will be used.
+        ``fd`` is a text or byte string giving the name (and the path if the file
+        isn't in the current working directory) of the file to be opened or a data stream.
 
         Raises FileNotFound exception if file is not present at given path.
         """
 
     @abstractmethod
-    def remove_file(self, fn: str, fp: str | PathLike[str]) -> None:
-        """Remove file with name ``fn`` in ``fp`` directory.
+    def remove_file(self, fn: str, fp: str) -> None:
+        """Remove file ``fn`` in ``fp`` directory.
 
         ``fp`` must start from '.' (root).
         """
 
     @abstractmethod
-    def create_folder(self, fn: str | PathLike[str], fp: str | PathLike[str] = '.', encoding: str = 'utf-8') -> str:
+    def create_folder(self, fn: str, fp: str = '.', encoding: str = 'utf-8') -> str:
         """Create folder ``fn`` inside archive in ``fp`` directory.
 
         ``fn`` can also be a full path of new directory, starting from '.' (``fp`` must be default).
@@ -168,7 +190,15 @@ class NewArchive(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def add_folder(self, fd: str | PathLike[str], fp: str | PathLike = '.', use_mp: bool = True) -> None:
+    def add_folder(
+        self,
+        fd: str | bytes | PathLike[str] | PathLike[bytes],
+        fp: str = '.',
+        compression: str = 'AnyStr',
+        level: str = 'AnyStr',
+        comment: str = '',
+        use_mp: bool = True
+        ) -> None:
         """Add folder from disk at ``fd`` directory to the archive in ``fp`` folder.
 
         ``fd`` path can be both absolute and relative.
@@ -180,7 +210,7 @@ class NewArchive(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def remove_folder(self, fn: str, fp: str | PathLike[str] = '.') -> list[str]:
+    def remove_folder(self, fn: str, fp: str = '.') -> list[str]:
         """Remove folder with name ``fn`` in ``fp`` directory and its contents.
 
         ``fn`` can also be a full path to the folder that will be removed, starting from '.' (``fp`` must be default).
@@ -193,37 +223,38 @@ class NewArchive(metaclass=ABCMeta):
     @abstractmethod
     def add_from_archive(
             self,
-            ap: str | PathLike[str],
-            fp: str | PathLike[str] = '.',
-            new_fp: str | PathLike[str] = '.',
+            ap: str | bytes | PathLike[str] | PathLike[bytes] | BinaryIO,
+            fp: str = '.',
+            new_fp: str = '.',
             pwd: Optional[str] = None,
-            comperssion: str = 'AnyStr',
+            compression: str = 'AnyStr',
             level: str = 'AnyStr',
             encoding: str = 'utf-8',
             comment: str = ''
     ):
         """Add file or folder with path ``fp`` from ``ap`` archive to ``new_fp`` of this archive.
 
-        ``ap`` path can be both absolute and relative.
+        ``ap`` is a text or byte string giving the name (and the path if the file
+        isn't in the current working directory) of the file to be opened or a binary data stream.
 
         ``fp`` must be a path to the file or folder that will be added, starting from '.' (root).
 
-        ``new_fp`` must be a path to the folder the file will be added to, starting from '.' (root).
+        ``new_fp`` must be a path to the folder the new file will be added to, starting from '.' (root).
 
         ``pwd`` must be provided if archive is encrypted.
 
-        Should be universal for all kinds of archives, but only works with zip for now
+        Should be universal for all kinds of archives, but only works with the same archive type for now.
         """
 
     @abstractmethod
-    def get_structure(self, fp: str | PathLike[str] = '.') -> list[str]:
+    def get_structure(self, fp: str = '.') -> list[str]:
         """Get structure of the archive. If ``fp`` is specified, returns the structure of given folder."""
 
     @abstractmethod
     def save(
             self,
             fn: str,
-            fp: int | str | bytes | PathLike[str] | PathLike[bytes] = '.',
+            fp: str | bytes | PathLike[str] | PathLike[bytes] = '.',
             comment: str = ''
     ) -> None:
         """Save new archive file with name ``fn`` at given ``fp``.

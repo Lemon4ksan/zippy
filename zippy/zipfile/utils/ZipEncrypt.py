@@ -72,13 +72,12 @@ class ZipDecrypter:
         self.key1 = (self.key1 * 134775813 + 1) & 4294967295
         self.key2 = self.crc32((self.key1 >> 24) & 255, self.key2)
 
-    def __call__(self, c: int):
+    def __call__(self, c: int) -> bytes:
         """Decrypt a single character."""
         k = self.key2 | 2
         c = c ^ (((k * (k ^ 1)) >> 8) & 255)
         self.update_keys(c)
-        c = c.to_bytes(byteorder='little')
-        return c
+        return c.to_bytes(byteorder='little')
 
 class ZipEncrypter(ZipDecrypter):
     def __call__(self, c: int) -> bytes:
@@ -87,5 +86,4 @@ class ZipEncrypter(ZipDecrypter):
         k = self.key2 | 2
         c = c ^ (((k * (k ^ 1)) >> 8) & 255)
         self.update_keys(_c)  # this is the only line that actually changed
-        c = c.to_bytes(byteorder='little')
-        return c
+        return c.to_bytes(byteorder='little')
