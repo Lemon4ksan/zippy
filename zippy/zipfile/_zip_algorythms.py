@@ -7,8 +7,8 @@ from typing import AnyStr
 from .utils import pwexplode
 from .utils import LZ77
 from .utils import ZipEncrypt
-from .compressions import *
-from .exceptions import *
+from zippy.compressions import *
+from zippy.exceptions import *
 
 def decrypt(bit_flag: str, v: int, crc: int, pwd: str, contents: bytes) -> tuple[str, bytes]:
     """Decrypt ``contents``.

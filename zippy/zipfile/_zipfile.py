@@ -3,9 +3,9 @@ from datetime import date, time, datetime
 from typing import BinaryIO, Optional
 
 from .._base_classes import File
+from ..compressions import *
+from ..exceptions import *
 from ._zip_algorythms import decrypt, decompress
-from .compressions import *
-from .exceptions import *
 
 @dataclass
 class FileRaw:
@@ -43,6 +43,9 @@ class FileRaw:
         extra_field_length = int.from_bytes(file.read(2), 'little')
         filename = file.read(filename_length).decode(encoding)
         extra_field = file.read(extra_field_length)
+        if compressed_size == 4_294_967_295 and extra_field[:2] == b'\x01\x00':  # zip64
+            uncompressed_size = int.from_bytes(extra_field[4:12], 'little')
+            compressed_size = int.from_bytes(extra_field[12:20], 'little')
         contents = file.read(compressed_size)
 
         if bit_flag[3] == '1':
@@ -181,6 +184,9 @@ class CDHeader:
         local_header_relative_offset = int.from_bytes(file.read(4), 'little')
         filename = file.read(file_name_length).decode(encoding)
         extra_field = file.read(extra_field_length)
+        if compressed_size == 4_294_967_295 and extra_field[:2] == b'\x01\x00':  # zip64
+            uncompressed_size = int.from_bytes(extra_field[4:12], 'little')
+            compressed_size = int.from_bytes(extra_field[12:20], 'little')
         file_comment = file.read(file_comment_length).decode(encoding)
 
         return cls(

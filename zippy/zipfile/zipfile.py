@@ -1,6 +1,6 @@
 from datetime import datetime, UTC
 from io import IOBase
-from multiprocessing import Pool, cpu_count, active_children
+from multiprocessing import Pool, cpu_count
 from os import PathLike, path, urandom
 from pathlib import Path
 from platform import system
@@ -8,13 +8,14 @@ from typing import BinaryIO, TextIO, Optional, AnyStr
 from zlib import crc32
 
 from .._base_classes import Archive, File, NewArchive
+from ..encryptions import *
+from ..compressions import *
+from ..exceptions import *
 from .utils.ZipEncrypt import ZipEncrypter
 from ._zipfile import FileRaw, CDHeader, CDEnd
 from ._zip_algorythms import compress
-from .encryptions import *
-from .compressions import *
-from .exceptions import *
 
+# TODO: Folder names with encoding different from ascii appears incorrectly in other archive progs (something to do with external file attrs)
 
 class NewZipFile(NewArchive):
     """Class used to create new zip file."""
@@ -46,7 +47,7 @@ class NewZipFile(NewArchive):
     ) -> None:
 
         if fp != '.':
-            fn = self.create_folder(fp) + fn
+            fn = self.create_folder(fp, encoding=encoding) + fn
 
         if path.exists(fd):
             if path.isdir(fd):
@@ -85,13 +86,12 @@ class NewZipFile(NewArchive):
             elif level == MAXIMUM:
                 bit_flag[1] = '1'
 
-        try:
-            fd.decode('utf-8')
-            bit_flag[11] = '1'  # Language encoding flag (EFS)
-        except ValueError:
-            pass
-
-        compression_method: int = COMPRESSION_FROM_STR[compression]
+        if fd != b'':
+            try:
+                fd.decode('utf-8')
+                bit_flag[11] = '1'  # Language encoding flag (EFS)
+            except ValueError:
+                pass
 
         # This is not full:
         # 1.1 - File is a volume label                              | Figure Out
@@ -111,25 +111,35 @@ class NewZipFile(NewArchive):
         # 6.3 - File is encrypted using Blowfish                    | TODO
         # 6.3 - File is encrypted using Twofish                     | TODO
 
-        if compression_method == DEFLATE or fp != '.' or self._encryption == ZIP_CRYPTO:
+        if compression == DEFLATE or fp != '.' or self._encryption == ZIP_CRYPTO:
             v = 20
-        elif compression_method == DEFLATE64:
+        elif compression == DEFLATE64:
             v = 21
-        elif compression_method == PKWARE_IMPLODING:
+        elif compression == PKWARE_IMPLODING:
             v = 25
-        elif compression_method == BZIP:
+        elif compression == BZIP:
             v = 46
         else:
             v = 10
 
+        compression_method: int = ZIP_COMPRESSION_FROM_STR[compression]
+
         fd = compress(compression_method, level, fd)
         if bit_flag[0] == '1':
             ze = ZipEncrypter(self._pwd)
-            check_byte = crc.to_bytes(4, 'little')[-1]  # Not sure if it's right (me == stupid)
+            check_byte = crc.to_bytes(4, 'little')[-1]
             encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
             fd = encryption_header + b"".join(map(ze, fd))
 
-        platform, extra_field = self._get_platform(real_path)
+        platform, extra_field = self._get_platform(real_path, uncompressed_size, len(fd), self._sizeof_CD)
+
+        if uncompressed_size >= 4_294_967_295:
+            uncompressed_size = 4_294_967_295
+            compressed_size = 4_294_967_295
+            offset = 4_294_967_295
+        else:
+            compressed_size = len(fd)
+            offset = self._sizeof_CD
 
         file = FileRaw(
             version_needed_to_exctract=v,
@@ -138,7 +148,7 @@ class NewZipFile(NewArchive):
             last_mod_time=time.to_bytes(4, 'little')[:2],
             last_mod_date=time.to_bytes(4, 'little')[2:],
             crc=crc,
-            compressed_size=len(fd),
+            compressed_size=compressed_size,
             uncompressed_size=uncompressed_size,
             filename_length=len(fn.encode(self._encoding)),
             extra_field_length=len(extra_field),
@@ -159,7 +169,7 @@ class NewZipFile(NewArchive):
             last_mod_time=time.to_bytes(4, 'little')[:2],
             last_mod_date=time.to_bytes(4, 'little')[2:],
             crc=crc,
-            compressed_size=len(fd),
+            compressed_size=compressed_size,
             uncompressed_size=uncompressed_size,
             filename_length=len(fn.encode(self._encoding)),
             extra_field_length=len(extra_field),
@@ -167,7 +177,7 @@ class NewZipFile(NewArchive):
             disk_number_start=0,
             internal_file_attrs=int('0').to_bytes(2, 'little'),  # Doesn't do much
             external_file_attrs=int('0').to_bytes(4, 'little'),  # Should be 0 for stdin
-            local_header_relative_offset=0,  # placeholder
+            local_header_relative_offset=offset,
             filename=fn,
             extra_field=extra_field,
             comment=comment
@@ -190,7 +200,7 @@ class NewZipFile(NewArchive):
             self,
             fn: str,
             fp: str | PathLike[str],
-            fd: str | bytes | TextIO | BinaryIO
+            fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO
     ) -> None:
 
         if fp[0] != '.':
@@ -215,7 +225,7 @@ class NewZipFile(NewArchive):
         except KeyError:
             raise FileNotFound(f'File {_p} doesn\'t exist')
 
-    def create_folder(self, fn: str, fp: str | PathLike[str] = '.') -> str:
+    def create_folder(self, fn: str | PathLike[str], fp: str | PathLike[str] = '.', encoding: str = 'utf-8') -> str:
 
         if fn[0] != '.' and fp[0] != '.':
             raise ValueError(f'Invalid filepath: {fp}')
@@ -232,11 +242,18 @@ class NewZipFile(NewArchive):
             # Folder1/Folder2/
             # Folder1/Folder2/text.txt
             # Folder1/Folder2/...
-            self.add_file("/".join(fp[:i + 1]) + '/', '')
+            self.add_file("/".join(fp[:i + 1]) + '/', b'', encoding=encoding)
 
         return "/".join(fp[:i + 1]) + '/'
 
-    def add_folder(self, fd: str | PathLike[str], fp: str | PathLike[str] = '.', use_mp: bool = True) -> None:
+    def add_folder(
+            self,
+            fd: str | PathLike[str],
+            fp: str | PathLike[str] = '.',
+            compression_method: str = STORED,
+            level: str = NORMAL,
+            comment: str = '',
+            use_mp: bool = True) -> None:
 
         if not path.isdir(fd):
             if path.exists(fd):
@@ -247,10 +264,9 @@ class NewZipFile(NewArchive):
             raise ValueError(f'Invalid filepath: {fp}')
 
         files = []
-        platform, extra_field = self._get_platform(fd)
 
         def get_all_files(_fd):
-            nonlocal platform, extra_field, files, fd
+            nonlocal files
 
             for f in Path(_fd).iterdir():
                 # Initial fd is the path of the folder being added. Used to get data of files inside it.
@@ -262,7 +278,9 @@ class NewZipFile(NewArchive):
                 if f.is_dir():
                     get_all_files(f)
                 else:
-                    files.append((f.name, str(f.absolute()), __path, platform, extra_field))
+                    files.append(
+                        (f.name, str(f.absolute()), __path, compression_method, level, comment, self._encoding)
+                    )
 
         get_all_files(fd)
 
@@ -287,7 +305,7 @@ class NewZipFile(NewArchive):
             pass
         elif fn[0] == '.' and fp[0] == '.':
             fp = fn
-            fp = fp.removeprefix('.\\').replace('\\', '/') + '/'
+            fp = fp[2:].replace('\\', '/') + '/'
         else:
             fp += '\\' + fn
         deletes = []
@@ -301,6 +319,32 @@ class NewZipFile(NewArchive):
             for file in deletes:
                 self._files.pop(file)
             return deletes
+
+    def add_from_archive(
+            self,
+            ap: str | PathLike[str],
+            fp: str | PathLike[str] = '.',
+            new_fp: str | PathLike[str] = '.',
+            pwd: Optional[str] = None,
+            comperssion: str = STORED,
+            level: str = NORMAL,
+            encoding: str = 'utf-8',
+            comment: str = ''
+    ):
+
+        with ZipFile.open(ap, pwd, encoding) as z:
+            for file in z.peek_all():
+                fn = file[0]
+                if (fp == fn[:len(fp)] and fp[2:] != fn[len(fn) - len(fp) + 1:-1]) or fp == '.':
+                    if file[0][-1] == '\\':
+                        self.create_folder(fp, new_fp, encoding)
+                    else:
+                        _t = fn.split('\\')
+                        fn = _t[-1]
+                        self.add_file(fn, file[1], new_fp, comperssion, level, encoding, comment)
+
+        self._files = {k: v for k, v in sorted(self._files.items(), key=lambda item: item[0])}
+        self._cd_headers = {k: v for k, v in sorted(self._cd_headers.items(), key=lambda item: item[0])}
 
     def get_structure(self, fp: str | PathLike[str] = '.') -> list[str]:
 
@@ -342,10 +386,15 @@ class NewZipFile(NewArchive):
             z.write(b'PK\x05\x06' + endof_cd.encode(self._encoding))
 
     @staticmethod
-    def _get_platform(fd: str | PathLike) -> tuple[int, bytes]:
+    def _get_platform(
+            fd: str | PathLike,
+            uncompressed_size: int,
+            compressed_size: int,
+            offset: int
+    ) -> tuple[int, bytes]:
         """Get platform and extra field."""
 
-        # Only these values are relevant today.
+        # Only these values are relevant.
         #  0 - MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems)
         #  3 - UNIX
         # 10 - Windows NTFS
@@ -354,6 +403,15 @@ class NewZipFile(NewArchive):
         # 0x0001        Zip64 extended information extra field
         # 0x000a        NTFS
         # 0x000d        UNIX
+
+        extra_field = b''
+
+        if uncompressed_size >= 4_294_967_295:
+            extra_field += b'\x00\x01\x00\x1C'
+            extra_field += uncompressed_size.to_bytes(8, 'little')
+            extra_field += compressed_size.to_bytes(8, 'little')
+            extra_field += offset.to_bytes(8, 'little')
+            extra_field += b'\x00\x00\x00\x00'
 
         pl = system()
         if pl == 'Windows':
@@ -368,7 +426,7 @@ class NewZipFile(NewArchive):
                     ntfs_time = delta.total_seconds() * 10000000
                     return int(ntfs_time).to_bytes(8, 'little')
 
-                extra_field = b'\x0a\x00\x20\x00\x00\x00\x00\x00\x01\x00\x18\x00'
+                extra_field += b'\x0a\x00\x20\x00\x00\x00\x00\x00\x01\x00\x18\x00'
                 extra_field += convert(path.getmtime(fd))
                 extra_field += convert(path.getatime(fd))
                 extra_field += convert(path.getctime(fd))
@@ -380,7 +438,6 @@ class NewZipFile(NewArchive):
             platform = 19
         else:
             platform = 0
-            extra_field = b''
 
         return platform, extra_field
 
@@ -398,20 +455,27 @@ class NewZipFile(NewArchive):
             fn: str,
             fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO,
             fp: str | PathLike[str],
+            compression: str,
+            level: str,
+            comment: str,
             platform: int,
-            extra_field: bytes
+            extra_field: bytes,
+            encdoing: str
     ) -> tuple[dict, dict, int]:
         """Multiprocessing backstage of ``add_file`` method."""
+        # NOTE: Currently offset is always 0.
 
         if fp != '.':
             fn = self._mp_create_directory(fp, platform, extra_field) + fn
 
         if path.exists(fd):
+            real_path = fd  # Used to get a, m and c time of the file if fd is pathlike.
             last_mod_time = datetime.fromtimestamp(path.getmtime(fd))
             with open(fd, 'rb') as f:
                 fd = f.read()
         else:
             last_mod_time = datetime.now()
+            real_path = None
 
         crc: int = crc32(fd)
         uncompressed_size: int = len(fd)
@@ -422,14 +486,41 @@ class NewZipFile(NewArchive):
 
         bit_flag = list('0000000000000000')
 
-        try:
-            fd.decode('utf-8')
-            if fn[-1] != '/':
-                bit_flag[11] = '1'  # Language encoding flag (EFS)
-        except UnicodeDecodeError:
-            pass
+        if fd != b'':
+            try:
+                fd.decode('utf-8')
+                if fn[-1] != '/':
+                    bit_flag[11] = '1'  # Language encoding flag (EFS)
+            except UnicodeDecodeError:
+                pass
 
-        v = 10
+        if compression == DEFLATE or fp != '.' or self._encryption == ZIP_CRYPTO:
+            v = 20
+        elif compression == DEFLATE64:
+            v = 21
+        elif compression == PKWARE_IMPLODING:
+            v = 25
+        elif compression == BZIP:
+            v = 46
+        else:
+            v = 10
+
+        compression_method: int = _ZIP_COMPRESSION_FROM_STR[compression]  # noqa
+
+        fd = compress(compression_method, level, fd)
+        if bit_flag[0] == '1':
+            ze = ZipEncrypter(self._pwd)
+            check_byte = crc.to_bytes(4, 'little')[-1]
+            encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
+            fd = encryption_header + b"".join(map(ze, fd))
+
+        platform, extra_field = self._get_platform(real_path, uncompressed_size, len(fd), self._sizeof_CD)
+
+        if uncompressed_size >= 4_294_967_295:
+            uncompressed_size = 4_294_967_295
+            compressed_size = 4_294_967_295
+        else:
+            compressed_size = len(fd)
 
         file = FileRaw(
             version_needed_to_exctract=v,
@@ -438,9 +529,9 @@ class NewZipFile(NewArchive):
             last_mod_time=time.to_bytes(4, 'little')[:2],
             last_mod_date=time.to_bytes(4, 'little')[2:],
             crc=crc,
-            compressed_size=len(fd),
+            compressed_size=compressed_size,
             uncompressed_size=uncompressed_size,
-            filename_length=len(fn.encode(self._encoding)),
+            filename_length=len(fn.encode(encdoing)),
             extra_field_length=len(extra_field),
             filename=fn,
             extra_field=extra_field,
@@ -461,19 +552,19 @@ class NewZipFile(NewArchive):
             crc=crc,
             compressed_size=len(fd),
             uncompressed_size=uncompressed_size,
-            filename_length=len(fn.encode(self._encoding)),
+            filename_length=len(fn.encode(encdoing)),
             extra_field_length=len(extra_field),
-            comment_length=0,
+            comment_length=len(comment.encode(encdoing)),
             disk_number_start=0,
             internal_file_attrs=int('0').to_bytes(2, 'little'),  # Doesn't do much
             external_file_attrs=int('0').to_bytes(4, 'little'),  # Should be 0 for stdin
             local_header_relative_offset=0,  # placeholder
             filename=fn,
             extra_field=extra_field,
-            comment=''
+            comment=comment
         )
 
-        sizeof_CD = len(cd_header.encode(self._encoding))
+        sizeof_CD = len(cd_header.encode(encdoing))
         self._files[file.filename] = file
         self._cd_headers[file.filename] = cd_header
         return self._files, self._cd_headers, sizeof_CD
@@ -493,13 +584,13 @@ class ZipFile(Archive):
     def __init__(
             self,
             files: list[File],
-            CD_headers: list[CDHeader],
-            endof_CD: CDEnd,
+            cd_headers: list[CDHeader],
+            endof_cd: CDEnd,
             encoding: str
     ):
-        super().__init__(files, endof_CD.comment, endof_CD.total_entries, encoding)
-        self._CD_headers: list[CDHeader] = CD_headers
-        self._endof_CD: CDEnd = endof_CD
+        super().__init__(files, endof_cd.comment, endof_cd.total_entries, encoding)
+        self._cd_headers: list[CDHeader] = cd_headers
+        self._endof_CD: CDEnd = endof_cd
 
     @staticmethod
     def open(
@@ -556,15 +647,15 @@ class ZipFile(Archive):
     def new(pwd: Optional[str] = None, encryption: str = UNENCRYPTED, encoding: str = 'utf-8') -> NewZipFile:
         return NewZipFile(pwd, encoding, encryption)
 
-    def edit(self, pwd: str, encryption: str = UNENCRYPTED) -> NewZipFile:
+    def edit(self, pwd: Optional[str] = None, encryption: str = UNENCRYPTED) -> NewZipFile:
         z = self.new(pwd, encryption, self.encoding)
         for file in self.files:
-            z.add_file(file.file_name, file.contents, '.', file.compression_method, file.compression_level)
+            z.add_file(file.filename, file.contents, '.', file.compression_method, file.compression_level)
 
         return z
 
     def set_password(self, pwd: str, encryption: str = ZIP_CRYPTO, encoding: str = 'utf-8') -> NewZipFile:
         z = self.new(pwd, encryption, encoding)
         for file in self.files:
-            z.add_file(file.file_name, file.contents, '.', file.compression_method, file.compression_level)
+            z.add_file(file.filename, file.contents, '.', file.compression_method, file.compression_level)
         return z

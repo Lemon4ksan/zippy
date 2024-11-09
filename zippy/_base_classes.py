@@ -10,7 +10,7 @@ class File:
     """Final representation of the file.
 
     Attributes:
-        file_name (:obj:`str`): Name of the file.
+        filename (:obj:`str`): Name of the file.
         is_dir (:obj:`bool`): True if file is a directory.
         version_needed_to_exctract (:obj:`int`): Minimal version of zip required to unpack.
         encryption_method (:obj:`str`): Name of the encryption method. 'Unencrypted' if none.
@@ -26,7 +26,7 @@ class File:
             file that may vary based on archive's structure.
     """
 
-    file_name: str
+    filename: str
     is_dir: bool
     version_needed_to_exctract: int
     encryption_method: str
@@ -46,7 +46,7 @@ class File:
         if not path.exists(__path):
             # Folder to extract
             mkdir(__path)
-        __path = path.join(__path, self.file_name.replace('/', '\\'))  # get final file path
+        __path = path.join(__path, self.filename.replace('/', '\\'))  # get final file path
 
         if path.exists(__path) and self.is_dir:
             # Folder already extracted
@@ -65,9 +65,6 @@ class File:
         If ``ignore_overflow`` is set to False, content that exceeds
         ``char_limit`` characters (bytes) will be partially shown.
         """
-
-        if self.is_dir:
-            return 'Folder'
 
         try:
             content = self.contents.decode(encoding)
@@ -140,11 +137,14 @@ class NewArchive(metaclass=ABCMeta):
             self,
             fn: str,
             fp: str | PathLike[str],
-            fd: str | bytes | TextIO | BinaryIO
+            fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO
     ) -> None:
-        """Edit file with name ``fn`` inside archive in ``fp`` directory with new ``fd`` data.
+        """Replace file with name ``fn`` inside archive in ``fp`` directory with new ``fd`` data.
 
         ``fp`` must start from '.' (root).
+
+        ``fd`` can be string, bytes object, os.PathLike, text or binary stream.
+        If it's os.PathLike, contents of the file path is leading to will be used.
 
         Raises FileNotFound exception if file is not present at given path.
         """
@@ -157,10 +157,10 @@ class NewArchive(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def create_folder(self, fn: str, fp: str | PathLike[str] = '.') -> str:
+    def create_folder(self, fn: str | PathLike[str], fp: str | PathLike[str] = '.', encoding: str = 'utf-8') -> str:
         """Create folder ``fn`` inside archive in ``fp`` directory.
 
-        ``fn`` can also be a full path of new directory (``fp`` must be default).
+        ``fn`` can also be a full path of new directory, starting from '.' (``fp`` must be default).
 
         ``fp`` should start from '.' (root).
 
@@ -168,7 +168,7 @@ class NewArchive(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def add_folder(self, fd: str | PathLike[str], fp: str | PathLike[str] = '.', use_mp: bool = True) -> None:
+    def add_folder(self, fd: str | PathLike[str], fp: str | PathLike = '.', use_mp: bool = True) -> None:
         """Add folder from disk at ``fd`` directory to the archive in ``fp`` folder.
 
         ``fd`` path can be both absolute and relative.
@@ -181,13 +181,38 @@ class NewArchive(metaclass=ABCMeta):
 
     @abstractmethod
     def remove_folder(self, fn: str, fp: str | PathLike[str] = '.') -> list[str]:
-        """Remove folder with name ``fn`` in ``fp`` directory and its content.
+        """Remove folder with name ``fn`` in ``fp`` directory and its contents.
 
-        ``fn`` can also be a full path to the folder that will be removed (``fp`` must be default).
+        ``fn`` can also be a full path to the folder that will be removed, starting from '.' (``fp`` must be default).
 
         ``fp`` should start from '.' (root).
 
         Returns list of paths of deleted files and folders.
+        """
+
+    @abstractmethod
+    def add_from_archive(
+            self,
+            ap: str | PathLike[str],
+            fp: str | PathLike[str] = '.',
+            new_fp: str | PathLike[str] = '.',
+            pwd: Optional[str] = None,
+            comperssion: str = 'AnyStr',
+            level: str = 'AnyStr',
+            encoding: str = 'utf-8',
+            comment: str = ''
+    ):
+        """Add file or folder with path ``fp`` from ``ap`` archive to ``new_fp`` of this archive.
+
+        ``ap`` path can be both absolute and relative.
+
+        ``fp`` must be a path to the file or folder that will be added, starting from '.' (root).
+
+        ``new_fp`` must be a path to the folder the file will be added to, starting from '.' (root).
+
+        ``pwd`` must be provided if archive is encrypted.
+
+        Should be universal for all kinds of archives, but only works with zip for now
         """
 
     @abstractmethod
@@ -205,17 +230,6 @@ class NewArchive(metaclass=ABCMeta):
 
         Additional ``comment`` can be applied to the file.
         """
-
-    @abstractmethod
-    def _mp_add_file(
-            self,
-            fn: str,
-            fd: str | bytes | PathLike[str] | PathLike[bytes] | TextIO | BinaryIO,
-            fp: str | PathLike[str],
-            platform: int,
-            extra_field: bytes
-    ) -> tuple[dict, dict, int]:
-        """Multiprocessing backstage of ``add_file`` method."""
 
 
 class Archive(metaclass=ABCMeta):
@@ -235,7 +249,7 @@ class Archive(metaclass=ABCMeta):
 
         compression_method: str = files[0].compression_method
         for file in files:
-            if compression_method != file.compression_method and file.file_name[-1] != '/':
+            if compression_method != file.compression_method and file.filename[-1] != '/':
                 # Folders are always stored so we don't count them
                 self.compression_method = 'Mixed'
                 break
@@ -274,7 +288,7 @@ class Archive(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def edit(self, pwd: str, encryption: str = 'Unencrypted') -> NewArchive:
+    def edit(self, pwd: Optional[str] = None, encryption: str = 'Unencrypted') -> NewArchive:
         """Return new editable archive class with given ``password``."""
 
     @abstractmethod
@@ -292,17 +306,23 @@ class Archive(metaclass=ABCMeta):
     def peek_all(
             self,
             encoding: str = 'utf-8',
+            include_folders: bool = True,
             ignore_overflow: bool = True,
             char_limit: int = 8191
     ) -> list[tuple[str, str | bytes]]:
-        """Decode files content. Returns a list of tuples, where first element is filename and
-        second is its content. If decoding failed, byte representation will be used instead.
+        """Decode files contents. Returns a list of tuples, where first element is filename and
+        second is its contents. If decoding failed, byte representation will be used instead.
+
+        If ``include_folders`` is set to False, folders will be ignored.
 
         If ``ignore_overflow`` is set to False, content that exceeds ``char_limit``
         characters (bytes) will be partially shown.
         """
         files = []
         for file in self.files:
-            if not file.is_dir:
-                files.append((file.file_name, file.peek(encoding, ignore_overflow, char_limit)))
+            if not file.is_dir or include_folders:
+                files.append(
+                    ('.\\' + file.filename.replace('/', '\\'),
+                     file.peek(encoding, ignore_overflow, char_limit))
+                )
         return files

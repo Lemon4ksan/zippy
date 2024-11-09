@@ -1,7 +1,7 @@
 import unittest
-from zippy.zipfile.exceptions import *
+from zippy.exceptions import *
 from zippy import ZipFile
-from zippy.zipfile.compressions import *
+from zippy.compressions import *
 
 from os import chdir
 chdir('.\\zip_files')
