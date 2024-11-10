@@ -123,7 +123,7 @@ class FileRaw:
         )
 
     def encode(self, encoding: str) -> bytes:
-        byte_str: bytes = b''
+        byte_str: bytes = b'PK\x03\x04'
         byte_str += self.version_needed_to_exctract.to_bytes(2, 'little')
         byte_str += int(self.bit_flag[::-1], 2).to_bytes(2, 'little')
         byte_str += self.compression_method.to_bytes(2, 'little')
@@ -217,7 +217,7 @@ class CDHeader:
         )
 
     def encode(self, encoding: str) -> bytes:
-        byte_str: bytes = b''
+        byte_str: bytes = b'PK\x01\x02'
         byte_str += self.version_made_by.to_bytes(1, 'little')
         byte_str += self.platform.to_bytes(1, 'little')
         byte_str += self.version_needed_to_exctract.to_bytes(2, 'little')
@@ -279,7 +279,7 @@ class CDEnd:
         )
 
     def encode(self, encoding: str) -> bytes:
-        byte_str: bytes = b''
+        byte_str: bytes = b'PK\x05\x06'
         byte_str += self.disk_num.to_bytes(2, 'little')
         byte_str += self.disk_num_CD.to_bytes(2, 'little')
         byte_str += self.total_entries.to_bytes(2, 'little')

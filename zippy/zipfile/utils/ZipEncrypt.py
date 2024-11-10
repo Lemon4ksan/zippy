@@ -35,7 +35,7 @@ class ZipDecrypter:
     """
 
     @staticmethod
-    def generate_crc_table():
+    def generate_crc_table() -> list[int]:
         """Generate a CRC-32 table.
 
         ZIP encryption uses the CRC32 one-byte primitive for scrambling some internal keys.
@@ -44,22 +44,20 @@ class ZipDecrypter:
         table = [0] * 256
         for i in range(256):
             crc = i
-            for j in range(8):
+            for _ in range(8):
                 if crc & 1:
                     crc = ((crc >> 1) & 0x7FFFFFFF) ^ poly
                 else:
                     crc = ((crc >> 1) & 0x7FFFFFFF)
             table[i] = crc
         return table
-    crctable = None
 
-    def crc32(self, ch, crc):
+    def crc32(self, ch: int, crc: int) -> int:
         """Compute the CRC32 primitive on one byte."""
         return ((crc >> 8) & 0xffffff) ^ self.crctable[(crc ^ ch) & 0xff]
 
-    def __init__(self, pwd):
-        if ZipDecrypter.crctable is None:
-            ZipDecrypter.crctable = ZipDecrypter.generate_crc_table()
+    def __init__(self, pwd: str):
+        self.crctable = self.generate_crc_table()
         self.key0 = 305419896
         self.key1 = 591751049
         self.key2 = 878082192

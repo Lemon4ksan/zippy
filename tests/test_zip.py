@@ -16,17 +16,17 @@ class TestCase1(unittest.TestCase):
 
     def test_decompression(self):
         with ZipFile.open('.\\stored.zip') as z:
-            self.assertEqual(self.test_str, z.files[0].peek())
+            self.assertEqual(self.test_str, z._files[0].peek())
 
         with ZipFile.open('.\\deflate.zip') as z:  # Includes deflate64
-            self.assertEqual(self.test_str, z.files[0].peek())
+            self.assertEqual(self.test_str, z._files[0].peek())
 
         with ZipFile.open('.\\BZip2.zip') as z:
-            self.assertEqual(self.test_str, z.files[0].peek())
+            self.assertEqual(self.test_str, z._files[0].peek())
 
     def test_decryption(self):
         with ZipFile.open('ZipEncrypted.zip', 'verysecurepassword') as z:
-            self.assertEqual(self.test_str, z.files[0].peek())
+            self.assertEqual(self.test_str, z._files[0].peek())
 
         self.assertRaises(WrongPassword, lambda: ZipFile.open('ZipEncrypted.zip', 'wrongpassword'))
 
@@ -58,9 +58,9 @@ class TestCase1(unittest.TestCase):
         zipfile.save('new.zip', comment='Lorem')
 
         with ZipFile.open('new.zip') as z:
-            self.assertEqual(self.test_str, z.files[0].peek())
-            self.assertEqual('Lorem', z.comment)
-            self.assertEqual('LOREM2', z.files[0].comment)  # Replacing already existing file check
+            self.assertEqual(self.test_str, z._files[0].peek())
+            self.assertEqual('Lorem', z._comment)
+            self.assertEqual('LOREM2', z._files[0].comment)  # Replacing already existing file check
 
         zipfile = ZipFile.new()
         zipfile.create_file('test.txt', 'TEXT', '.\\test1\\test2')
@@ -71,14 +71,35 @@ class TestCase1(unittest.TestCase):
         zipfile.remove_folder('.\\test1\\test2')
         self.assertEqual(['.\\test1\\'], zipfile.get_structure())
 
+    def test_add_from_archive(self):
+        z = ZipFile.new()
+        z.add_from_archive('folders.zip', '.\\goodbyedpi-0.2.2', '.\\EXTRA FOLDER')
+        struct = ['.\\EXTRA FOLDER\\', '.\\EXTRA FOLDER\\0_russia_update_blacklist_file.cmd', '.\\EXTRA FOLDER\\1_russia_blacklist.cmd', '.\\EXTRA FOLDER\\1_russia_blacklist_dnsredir.cmd', '.\\EXTRA FOLDER\\2_any_country.cmd', '.\\EXTRA FOLDER\\2_any_country_dnsredir.cmd', '.\\EXTRA FOLDER\\LICENSE-getline.txt', '.\\EXTRA FOLDER\\LICENSE-goodbyedpi.txt', '.\\EXTRA FOLDER\\LICENSE-uthash.txt', '.\\EXTRA FOLDER\\LICENSE-windivert.txt', '.\\EXTRA FOLDER\\WinDivert.dll', '.\\EXTRA FOLDER\\WinDivert32.sys', '.\\EXTRA FOLDER\\WinDivert64.sys', '.\\EXTRA FOLDER\\goodbyedpi-0.2.2\\', '.\\EXTRA FOLDER\\goodbyedpi-0.2.2\\licenses\\', '.\\EXTRA FOLDER\\goodbyedpi-0.2.2\\licenses\\\\', '.\\EXTRA FOLDER\\goodbyedpi-0.2.2\\x86\\', '.\\EXTRA FOLDER\\goodbyedpi-0.2.2\\x86\\\\', '.\\EXTRA FOLDER\\goodbyedpi-0.2.2\\x86_64\\', '.\\EXTRA FOLDER\\goodbyedpi-0.2.2\\x86_64\\\\', '.\\EXTRA FOLDER\\goodbyedpi.exe', '.\\EXTRA FOLDER\\russia-blacklist.txt', '.\\EXTRA FOLDER\\service_install_russia_blacklist.cmd', '.\\EXTRA FOLDER\\service_install_russia_blacklist_dnsredir.cmd', '.\\EXTRA FOLDER\\service_remove.cmd', '.\\EXTRA FOLDER\\test.zip']
+        self.assertEqual(struct, z.get_structure())
+
+    def test_edit_file(self):
+        z = ZipFile.new()
+        z.create_file('test.txt', 'TEXT', '.\\test1')
+        z.edit_file('test.txt', '.\\test1', 'NEW TEXT')
+        self.assertEqual(b'NEW TEXT', z._files['test1/test.txt'].contents)
+        self.assertRaises(FileNotFound, lambda: z.edit_file('nonexistent.txt', '.\\test1', 'TEXT'))
+
+    def test_invalid_paths(self):
+        z = ZipFile.new()
+        self.assertRaises(ValueError, lambda: z.create_file('test.txt', 'TEXT', 'invalid/path'))
+        self.assertRaises(ValueError, lambda: z.add_file('test.txt', '.\\test.txt', 'invalid/path'))
+        self.assertRaises(ValueError, lambda: z.create_folder('test', 'invalid/path'))
+        self.assertRaises(ValueError, lambda: z.remove_folder('test', 'invalid/path'))
+        self.assertRaises(ValueError, lambda: z.get_structure('invalid/path'))
+
 class TestCase2(unittest.TestCase):
 
     def test_add_directory(self):
         self.maxDiff = None
         z = ZipFile.new()
         z.add_folder('.\\goodbyedpi-0.2.2', '.\\EXTRA FOLDER')
-        struct = ['EXTRA FOLDER/', 'EXTRA FOLDER/0_russia_update_blacklist_file.cmd', 'EXTRA FOLDER/1_russia_blacklist.cmd', 'EXTRA FOLDER/1_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/2_any_country.cmd', 'EXTRA FOLDER/2_any_country_dnsredir.cmd', 'EXTRA FOLDER/licenses/', 'EXTRA FOLDER/licenses/LICENSE-getline.txt', 'EXTRA FOLDER/licenses/LICENSE-goodbyedpi.txt', 'EXTRA FOLDER/licenses/LICENSE-uthash.txt', 'EXTRA FOLDER/licenses/LICENSE-windivert.txt', 'EXTRA FOLDER/licenses/test.zip', 'EXTRA FOLDER/russia-blacklist.txt', 'EXTRA FOLDER/service_install_russia_blacklist.cmd', 'EXTRA FOLDER/service_install_russia_blacklist_dnsredir.cmd', 'EXTRA FOLDER/service_remove.cmd', 'EXTRA FOLDER/x86/', 'EXTRA FOLDER/x86/WinDivert.dll', 'EXTRA FOLDER/x86/WinDivert32.sys', 'EXTRA FOLDER/x86/WinDivert64.sys', 'EXTRA FOLDER/x86/goodbyedpi.exe', 'EXTRA FOLDER/x86_64/', 'EXTRA FOLDER/x86_64/WinDivert.dll', 'EXTRA FOLDER/x86_64/WinDivert64.sys', 'EXTRA FOLDER/x86_64/goodbyedpi.exe']
-        self.assertEqual(struct, list(z._files.keys()))
+        struct = ['.\\EXTRA FOLDER\\', '.\\EXTRA FOLDER\\0_russia_update_blacklist_file.cmd', '.\\EXTRA FOLDER\\1_russia_blacklist.cmd', '.\\EXTRA FOLDER\\1_russia_blacklist_dnsredir.cmd', '.\\EXTRA FOLDER\\2_any_country.cmd', '.\\EXTRA FOLDER\\2_any_country_dnsredir.cmd', '.\\EXTRA FOLDER\\licenses\\', '.\\EXTRA FOLDER\\licenses\\LICENSE-getline.txt', '.\\EXTRA FOLDER\\licenses\\LICENSE-goodbyedpi.txt', '.\\EXTRA FOLDER\\licenses\\LICENSE-uthash.txt', '.\\EXTRA FOLDER\\licenses\\LICENSE-windivert.txt', '.\\EXTRA FOLDER\\licenses\\test.zip', '.\\EXTRA FOLDER\\russia-blacklist.txt', '.\\EXTRA FOLDER\\service_install_russia_blacklist.cmd', '.\\EXTRA FOLDER\\service_install_russia_blacklist_dnsredir.cmd', '.\\EXTRA FOLDER\\service_remove.cmd', '.\\EXTRA FOLDER\\x86\\', '.\\EXTRA FOLDER\\x86\\WinDivert.dll', '.\\EXTRA FOLDER\\x86\\WinDivert32.sys', '.\\EXTRA FOLDER\\x86\\WinDivert64.sys', '.\\EXTRA FOLDER\\x86\\goodbyedpi.exe', '.\\EXTRA FOLDER\\x86_64\\', '.\\EXTRA FOLDER\\x86_64\\WinDivert.dll', '.\\EXTRA FOLDER\\x86_64\\WinDivert64.sys', '.\\EXTRA FOLDER\\x86_64\\goodbyedpi.exe']
+        self.assertEqual(struct, z.get_structure())
 
 if __name__ == '__main__':
     unittest.main()

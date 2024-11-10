@@ -50,6 +50,9 @@ def decrypt(bit_flag: str, v: int, crc: int, pwd: Optional[str], data: bytes) ->
 def encrypt(data: bytes, pwd: Optional[str], crc: int) -> bytes:
     """Encrypt ``data``. Returns encrypted data."""
 
+    if not pwd:
+        raise WrongPassword('Zip file requires password to be encrypted.')
+    
     ze = ZipEncrypter(pwd)
     check_byte = crc.to_bytes(4, 'little')[-1]
     encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
@@ -108,7 +111,10 @@ def decompress(compression_method: int, uncompressed_size: int, contents: bytes)
 
 def compress(method: int, level: str, data: bytes) -> bytes:
     """Compress ``data``. Returns compressed data."""
-
+    
+    if len(data) == 0:
+        return b''
+    
     if method in (8, 9):
         if level == FAST:
             level_value = 3
