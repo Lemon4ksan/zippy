@@ -80,9 +80,9 @@ class TestCase1(unittest.TestCase):
     def test_edit_file(self):
         z = ZipFile.new()
         z.create_file('test.txt', 'TEXT', '.\\test1')
-        z.edit_file('test.txt', '.\\test1', 'NEW TEXT')
+        z.edit_file('test.txt', 'NEW TEXT', '.\\test1')
         self.assertEqual(b'NEW TEXT', z._files['test1/test.txt'].contents)
-        self.assertRaises(FileNotFound, lambda: z.edit_file('nonexistent.txt', '.\\test1', 'TEXT'))
+        self.assertRaises(FileNotFound, lambda: z.edit_file('nonexistent.txt', 'TEXT', '.\\test1',))
 
     def test_invalid_paths(self):
         z = ZipFile.new()

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from os import PathLike, mkdir, path
 from abc import abstractmethod, ABCMeta
-from typing import AnyStr, Optional, Any, TextIO, BinaryIO, Self
+from typing import Optional, Any, TextIO, BinaryIO, Self
 
 
 @dataclass
@@ -10,19 +10,19 @@ class File:
     """Final representation of the file.
 
     Attributes:
-        filename (:obj:`str`): Name of the file.
-        is_dir (:obj:`bool`): True if file is a directory.
-        version_needed_to_exctract (:obj:`int`): Minimal version of zip required to unpack.
-        encryption_method (:obj:`str`): Name of the encryption method. 'Unencrypted' if none.
-        compression_method (:obj:`str`): Name of the compression method. 'Stored' if none.
-        compression_level (:obj:`str`): Level of compression.
-        last_mod_time (:class:`datetime`, optional): Datetime of last modification of the file.
+        filename (`str`): Name of the file.
+        is_dir (`bool`): True if file is a directory.
+        version_needed_to_exctract (`int`): Minimal version of zip required to unpack.
+        encryption_method (`str`): Name of the encryption method. 'Unencrypted' if none.
+        compression_method (`str`): Name of the compression method. 'Stored' if none.
+        compression_level (`str`): Level of compression.
+        last_mod_time (`datetime`, optional): Datetime of last modification of the file.
             None if time is not specified.
-        crc (:obj:`int`): CRC of the file.
-        compressed_size (:obj:`int`): Compressed size of the file.
-        uncompressed_size (:obj:`int`): Uncompressed size of the file.
-        contents (:obj:`bytes`): Undecoded content of the file.
-        specifications (:obj:`list`[:obj:`Any`]`, optional): Miscelenious information about the
+        crc (`int`): CRC of the file.
+        compressed_size (`int`): Compressed size of the file.
+        uncompressed_size (`int`): Uncompressed size of the file.
+        contents (`bytes`): Undecoded content of the file.
+        specifications (`list[Any]`, optional): Miscelenious information about the
             file that may vary based on archive's structure.
     """
 
@@ -126,7 +126,7 @@ class NewArchive(metaclass=ABCMeta):
             encoding: str = 'utf-8',
             comment: str = ''
     ) -> None:
-        """Create file ``fn`` in ``fp`` directory with data ``fd`` inside archive. It will be compressed with
+        """Create file ``fn`` in ``fp`` directory with data ``fd``. It will be compressed using
         ``compression`` method with ``level`` strength if it's supported and encoded with given ``encoding``.
 
         ``fd`` is a text or byte string or a data stream.
@@ -152,7 +152,7 @@ class NewArchive(metaclass=ABCMeta):
         ``compression`` method with ``level`` strength if it's supported and encoded with given ``encoding``.
 
         ``fd`` is a text or byte string giving the name (and the path if the file
-        isn't in the current working directory) of the file to be opened.
+        isn't in the current working directory) of the file to be added.
 
         ``fp`` must start from '.' (root).
 
@@ -163,8 +163,8 @@ class NewArchive(metaclass=ABCMeta):
     def edit_file(
             self,
             fn: str,
-            fp: str,
             fd: str | bytes | TextIO | BinaryIO,
+            fp: str = '.',
             /
     ) -> None:
         """Replace file ``fn`` in ``fp`` directory inside archive with new ``fd`` data.
