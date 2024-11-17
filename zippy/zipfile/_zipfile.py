@@ -27,7 +27,7 @@ class FileRaw:
     contents: bytes
 
     @classmethod
-    def __init_raw__(cls, file: BinaryIO, encoding: str):
+    def __init_raw__(cls, file: BinaryIO, encoding: str) -> 'FileRaw':
         version: list[int] = [byte for byte in file.read(2)]
         version_needed_to_exctract: int = version[0]
         if version[1] != 0:  # This byte is unused
@@ -168,7 +168,7 @@ class CDHeader:
     comment: str
 
     @classmethod
-    def __init_raw__(cls, file: BinaryIO, encoding: str):
+    def __init_raw__(cls, file: BinaryIO, encoding: str) -> 'CDHeader':
         version_made_by = int.from_bytes(file.read(1), 'little')
         platform = int.from_bytes(file.read(1), 'little')
         version_needed_to_exctract = int.from_bytes(file.read(2), 'little')
@@ -257,7 +257,7 @@ class CDEnd:
     comment: str
 
     @classmethod
-    def __init_raw__(cls, file: BinaryIO, encoding: str):
+    def __init_raw__(cls, file: BinaryIO, encoding: str) -> 'CDEnd':
         disk_num = int.from_bytes(file.read(2), 'little')
         disk_num_CD = int.from_bytes(file.read(2), 'little')
         total_entries = int.from_bytes(file.read(2), 'little')

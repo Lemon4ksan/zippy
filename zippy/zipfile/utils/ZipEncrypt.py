@@ -64,7 +64,7 @@ class ZipDecrypter:
         for p in pwd:
             self.update_keys(ord(p))
 
-    def update_keys(self, c: int):
+    def update_keys(self, c: int) -> None:
         self.key0 = self.crc32(c, self.key0)
         self.key1 = (self.key1 + (self.key0 & 255)) & 4294967295
         self.key1 = (self.key1 * 134775813 + 1) & 4294967295
