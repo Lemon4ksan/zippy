@@ -1,16 +1,17 @@
 from dataclasses import dataclass
 from datetime import date, time, datetime
 from typing import BinaryIO, Optional
+from os import sep
 
 from .._base_classes import File
-from ..compressions import *
+from ..constants import *
 from ..exceptions import *
 from ._zip_algorythms import decrypt, decompress
 
 @dataclass
 class FileRaw:
     """Raw file representation. It's uncompressed, not decrypted (if it was)
-     and contains data fields that user doesn't need."""
+    and contains data fields that user doesn't need."""
 
     version_needed_to_exctract: int
     bit_flag: str
@@ -75,6 +76,7 @@ class FileRaw:
         )
 
     def decode(self, pwd: Optional[str]) -> File:
+        """Convert raw data into its final form. Password is required if archive is encrypted."""
         
         encryption_method, contents = decrypt(
             self.bit_flag, self.version_needed_to_exctract, self.crc, pwd, self.contents
@@ -95,21 +97,22 @@ class FileRaw:
         except ValueError:
             final_last_mod_time = None
 
-        if compression_method in (DEFLATE, DEFLATE64):
+        if compression_method in ('Deflate', 'Deflate64'):
+            compression_level: ZipLevels
             match self.bit_flag[1:3]:
                 case '00':
-                    compression_level = NORMAL
+                    compression_level = 'Normal'
                 case '10':
-                    compression_level = MAXIMUM
+                    compression_level = 'Maximum'
                 case '01':
-                    compression_level = FAST
+                    compression_level = 'Fast'
                 case '11':
-                    compression_level = FAST
+                    compression_level = 'Fast'
         else:
-            compression_level = NORMAL
+            compression_level = 'Normal'
 
         return File(
-            self.filename,
+            self.filename.replace('/', sep),
             self.filename[-1] == '/',
             self.version_needed_to_exctract,
             encryption_method,
@@ -123,6 +126,7 @@ class FileRaw:
         )
 
     def encode(self, encoding: str) -> bytes:
+        """Convert raw data into bytes. Encoding is used to encode filename and comment."""
         byte_str: bytes = b'PK\x03\x04'
         byte_str += self.version_needed_to_exctract.to_bytes(2, 'little')
         byte_str += int(self.bit_flag[::-1], 2).to_bytes(2, 'little')
@@ -217,6 +221,7 @@ class CDHeader:
         )
 
     def encode(self, encoding: str) -> bytes:
+        """Convert raw data into bytes. Encoding is used to encode filename and comment."""
         byte_str: bytes = b'PK\x01\x02'
         byte_str += self.version_made_by.to_bytes(1, 'little')
         byte_str += self.platform.to_bytes(1, 'little')
@@ -279,6 +284,7 @@ class CDEnd:
         )
 
     def encode(self, encoding: str) -> bytes:
+        """Convert raw data into bytes. Encoding is used to encode comment."""
         byte_str: bytes = b'PK\x05\x06'
         byte_str += self.disk_num.to_bytes(2, 'little')
         byte_str += self.disk_num_CD.to_bytes(2, 'little')

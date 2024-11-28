@@ -6,26 +6,25 @@ from os import path as os_path
 from types import TracebackType
 from typing import Optional, Any, TextIO, BinaryIO, Self
 
-
 @dataclass
 class File:
     """Final representation of the file.
 
-    Attributes:
-        filename (`str`): Name of the file.
-        is_dir (`bool`): True if file is a directory.
-        version_needed_to_exctract (`int`): Minimal version of zip required to unpack.
-        encryption_method (`str`): Name of the encryption method. 'Unencrypted' if none.
-        compression_method (`str`): Name of the compression method. 'Stored' if none.
-        compression_level (`str`): Level of compression.
-        last_mod_time (`datetime`, optional): Datetime of last modification of the file.
-            None if time is not specified.
-        crc (`int`): CRC of the file.
-        compressed_size (`int`): Compressed size of the file.
-        uncompressed_size (`int`): Uncompressed size of the file.
-        contents (`bytes`): Undecoded content of the file.
-        specifications (`dict[Any, Any]`, optional): Miscelenious information about the
-            file that may vary based on archive's structure.
+    **Attributes**:
+        * filename (`str`): Name of the file.
+        * is_dir (`bool`): True if file is a directory.
+        * version_needed_to_exctract (`int`): Minimal version of zip required to unpack.
+        * encryption_method (`str`): Name of the encryption method. 'Unencrypted' if none.
+        * compression_method (`str`): Name of the compression method. 'Stored' if none.
+        * compression_level (`str`): Level of compression.
+        * last_mod_time (`datetime`, optional): Datetime of last modification of the file.
+        None if time is not specified.
+        * crc (`int`): CRC of the file.
+        * compressed_size (`int`): Compressed size of the file.
+        * uncompressed_size (`int`): Uncompressed size of the file.
+        * contents (`bytes`): Undecoded content of the file.
+        * specifications (`dict[Any, Any]`, optional): Miscelenious information about the
+        file that may vary based on archive's structure.
     """
 
     filename: str
@@ -136,8 +135,8 @@ class NewArchive(metaclass=ABCMeta):
             path: str,
             contents: str | bytes | TextIO | BinaryIO,
             /,
-            compression: str = 'AnyStr',
-            level: str = 'AnyStr',
+            compression = 'AnyStr',
+            level = 'AnyStr',
             encoding: str = 'utf-8',
             comment: str = ''
     ) -> None:
@@ -157,8 +156,8 @@ class NewArchive(metaclass=ABCMeta):
             source: int | str | bytes | PathLike[str] | PathLike[bytes],
             path: str = '',
             /,
-            compression: str = 'AnyStr',
-            level: str = 'AnyStr',
+            compression = 'AnyStr',
+            level = 'AnyStr',
             encoding: str = 'utf-8',
             comment: str = ''
     ) -> None:
@@ -208,10 +207,11 @@ class NewArchive(metaclass=ABCMeta):
         source: str | bytes | PathLike[str] | PathLike[bytes],
         path: str = '',
         /,
-        compression: str = 'AnyStr',
-        level: str = 'AnyStr',
+        compression = 'AnyStr',
+        level = 'AnyStr',
         encoding: str = 'utf-8',
         comment: str = '',
+        *,
         use_mp: bool = False
     ) -> None:
         """Add folder ``source`` from disk to the archive in ``path`` folder.
@@ -228,8 +228,8 @@ class NewArchive(metaclass=ABCMeta):
             new_path: str = '.',
             /,
             pwd: Optional[str] = None,
-            compression: str = 'AnyStr',
-            level: str = 'AnyStr',
+            compression = 'AnyStr',
+            level = 'AnyStr',
             encoding: str = 'utf-8',
             comment: str = ''
     ) -> None:
@@ -334,7 +334,7 @@ class Archive(metaclass=ABCMeta):
 
     @staticmethod
     @abstractmethod
-    def new(pwd: Optional[str] = None, encryption: str = 'Unencrypted', encoding: str = 'utf-8') -> NewArchive:
+    def new(pwd: Optional[str] = None, encryption = 'Unencrypted', encoding: str = 'utf-8') -> NewArchive:
         """Return new editable archive class with given ``password`` and ``encryption``.
 
         ``encoding`` is only used to encode filenames and comments. You may use different encoding on files.
@@ -342,11 +342,11 @@ class Archive(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def edit(self, pwd: Optional[str] = None, encryption: str = 'Unencrypted') -> NewArchive:
+    def edit(self, pwd: Optional[str] = None, encryption = 'Unencrypted') -> NewArchive:
         """Return editable archive class with existing files and given ``password``."""
 
     @abstractmethod
-    def set_password(self, pwd: str, encryption: str = 'AnyStr') -> NewArchive:
+    def set_password(self, pwd: str, encryption = 'AnyStr') -> NewArchive:
         """Set new password for an archive. Returns editable class with all files."""
 
     def extract_all(

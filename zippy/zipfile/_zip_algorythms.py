@@ -8,7 +8,7 @@ from typing import Optional
 from .utils import pwexplode
 from .utils import LZ77 as LZ77_module
 from .utils.ZipEncrypt import ZipDecrypter, ZipEncrypter
-from ..compressions import *
+from ..constants import *
 from ..exceptions import *
 
 def decrypt(bit_flag: str, v: int, crc: int, pwd: Optional[str], data: bytes) -> tuple[str, bytes]:
@@ -58,11 +58,12 @@ def encrypt(data: bytes, pwd: Optional[str], crc: int) -> bytes:
     encryption_header = b"".join(map(ze, urandom(11) + check_byte.to_bytes(1, 'little')))
     return encryption_header + b"".join(map(ze, data))
 
-def decompress(compression_method: int, uncompressed_size: int, data: bytes) -> tuple[str, bytes]:
+def decompress(compression_method: int, uncompressed_size: int, data: bytes) -> tuple[ZipCompressions, bytes]:
     """Decompress ``contents``.
     Returns tuple with first element being compression method and second being decompressed data.
     """
 
+    method: ZipCompressions
     if compression_method == 0:
         method = 'Stored'
     elif compression_method in range(1, 6):
@@ -78,7 +79,7 @@ def decompress(compression_method: int, uncompressed_size: int, data: bytes) -> 
         method = 'Deflate64'
         data = deflate.deflate_decompress(data, uncompressed_size)
     elif compression_method == 10:
-        method = 'PKWARE Data Compression Library Imploding'
+        method = 'PKWARE Imploding'
         data = pwexplode.explode(data)  # Untested
     elif compression_method == 11:
         raise ReservedValue('Compression method 11 is reserved.')
@@ -87,9 +88,9 @@ def decompress(compression_method: int, uncompressed_size: int, data: bytes) -> 
         data = bz2.decompress(data)
     elif compression_method == 13:
         raise ReservedValue('Compression method 13 is reserved.')
-    elif compression_method == 14:
-        method = 'LZMA'
-        data = b''
+    #elif compression_method == 14:
+        #method = 'LZMA'
+        #data = b''
     elif compression_method == 19:
         method = 'LZ77'
         data = LZ77_module.decompress(data)  # Untested
@@ -104,15 +105,15 @@ def decompress(compression_method: int, uncompressed_size: int, data: bytes) -> 
 
     return method, data
 
-def compress(method: int, level: str, data: bytes) -> bytes:
+def compress(method: int, level: ZipLevels, data: bytes) -> bytes:
     """Compress ``data``. Returns compressed data."""
     
     if method in (8, 9):
-        if level == FAST:
+        if level == 'Fast':
             level_value = 3
-        elif level == NORMAL:
+        elif level == 'Normal':
             level_value = 6
-        elif level == MAXIMUM:
+        elif level == 'Maximum':
             level_value = 12
         else:
             raise ValueError(f'Unknown compression level {level}.')

@@ -8,8 +8,7 @@ from typing import BinaryIO, TextIO, Optional
 from zlib import crc32
 
 from .._base_classes import Archive, File, NewArchive
-from ..encryptions import *
-from ..compressions import *
+from ..constants import *
 from ..exceptions import *
 from ._zipfile import FileRaw, CDHeader, CDEnd
 from ._zip_algorythms import compress, encrypt
@@ -37,36 +36,44 @@ class NewZipFile(NewArchive):
             self,
             pwd: Optional[str],
             encoding: str,
-            encryption: str
+            encryption: ZipEncryptions
     ):
         # Dictionaries are used to easily replace file's content with new one.
-        # They are being sorted each time to keep consistent representation.
         super().__init__(pwd, encoding, encryption)
         self._files: dict[str, FileRaw] = {}
         self._cd_headers: dict[str, CDHeader] = {}
         self._sizeof_CD: int = 0
         self._current_root: Optional[str] = None
+        self._encryption: ZipEncryptions
 
     # see _base_classes.py for documentation.
     def get_files(self, encoding: str = 'utf-8') -> dict[str, File]:
-        return {k: v.decode(encoding) for k, v in self._files.items()}
+        return {k.replace('/', sep): v.decode(encoding) for k, v in self._files.items()}
 
     def get_structure(self, path: str = '', /) -> list[str]:
         if path == '':
-            return [file_path.replace('/', sep) for file_path in self._files]
+            return list(
+                sorted(
+                    file_path.replace('/', sep) for file_path in self._files
+                )
+            )
         else:
             if path.replace(sep, '/') + '/' not in self._files:
                 raise FileNotFound(f"Folder '{path}' doesn't exist.")
 
-            return [file_path.replace('/', sep) for file_path in self._files if path in file_path[:len(path)]]
+            return list(
+                sorted(
+                    file_path.replace('/', sep) for file_path in self._files if path in file_path[:len(path)]
+                )
+            )
 
     def create_file(
             self,
             path: str,
             contents: str | bytes | TextIO | BinaryIO,
             /,
-            compression: str = STORED,
-            level: str = NORMAL,
+            compression: ZipCompressions = 'Stored',
+            level: ZipLevels = 'Normal',
             encoding: str = 'utf-8',
             comment: str = ''
     ) -> None:
@@ -76,11 +83,11 @@ class NewZipFile(NewArchive):
                 raise ValueError(f"Argument path contains illegal character '{l}'.")
 
         if path[-1] == sep:
-            if any([compression != STORED, level != NORMAL, encoding != 'utf-8']):
-                raise ValueError("An incorrect attempt to create a folder was cancelled." \
-                                 "Folder must be STORED with NORMAL level and in utf-8 encoding for add_file method." \
+            if any([compression != 'Stored', level != 'Normal', encoding != 'utf-8']):
+                raise ValueError("An incorrect attempt to create a folder was cancelled. " \
+                                 "Folder must be STORED with NORMAL level and in utf-8 encoding for add_file method. " \
                                  "Prefer to using create_folder instead, since subfolders will not be automatically created this way.")
-            filename: str = path.replace('\\', '/')
+            filename: str = path.replace('\\', '/')  # already a full path
             file_path: str = ''
         else:
             filename = os_path.basename(path)
@@ -112,15 +119,15 @@ class NewZipFile(NewArchive):
 
         v: int = 10
 
-        if compression == DEFLATE or file_path != '' or self._encryption == ZIP_CRYPTO:
+        if compression == 'Deflate' or filename[-1] == '/' or self._encryption == 'ZipCrypto':
             v = 20
-        if compression == DEFLATE64:
+        if compression == 'Deflate64':
             v = 21
-        if compression == PKWARE_IMPLODING:
+        if compression == 'PKWARE Imploding':
             v = 25
         if uncompressed_size >= INT32_MAX:
             v = 45
-        if compression == BZIP:
+        if compression == 'BZIP2':
             v = 46
 
         bit_flag: list[str] = list('0000000000000000')
@@ -135,7 +142,7 @@ class NewZipFile(NewArchive):
         compression_method: int = ZIP_COMPRESSION_FROM_STR[compression]
         data = compress(compression_method, level, data)
 
-        if self._encryption != UNENCRYPTED:
+        if self._encryption != 'Unencrypted':
             bit_flag[0] = '1'
             data = encrypt(data, self._pwd, crc)
         if compression in (DEFLATE, DEFLATE64):
@@ -221,16 +228,13 @@ class NewZipFile(NewArchive):
         self._files[file.filename] = file
         self._cd_headers[file.filename] = cd_header
 
-        self._files = {k: v for k, v in sorted(self._files.items(), key=lambda item: item[0])}
-        self._cd_headers = {k: v for k, v in sorted(self._cd_headers.items(), key=lambda item: item[0])}
-
     def add_file(
             self,
             source: int | str | bytes | PathLike[str] | PathLike[bytes],
             path: str = '',
             /,
-            compression: str = STORED,
-            level: str = NORMAL,
+            compression: ZipCompressions = 'Stored',
+            level: ZipLevels = 'Normal',
             encoding: str = 'utf-8',
             comment: str = ''
     ) -> None:
@@ -243,9 +247,9 @@ class NewZipFile(NewArchive):
                 raise ValueError("Need to specify path if source is a file descriptor.")
             path = str(os_path.basename(source))
         if os_path.isdir(source):
-            if any([compression != STORED, level != NORMAL, encoding != 'utf-8']):
-                raise ValueError("An attempt to add a folder was cancelled." \
-                                 "Folder must be STORED with NORMAL level without specified encoding." \
+            if any([compression != 'Stored', level != 'Normal', encoding != 'utf-8']):
+                raise ValueError("An attempt to add a folder was cancelled. " \
+                                 "Folder must be STORED with NORMAL level without specified encoding. " \
                                  "Prefer to using add_folder instead, since child files will not be added by using add_file.")
             if path[-1] == '/':
                 filename: str = path.replace('\\', '/')
@@ -308,15 +312,15 @@ class NewZipFile(NewArchive):
 
         v: int = 10
 
-        if compression == DEFLATE or file_path != '' or self._encryption == ZIP_CRYPTO:
+        if compression == 'Deflate' or filename[-1] == '/' or self._encryption == 'ZipCrypto':
             v = 20
-        if compression == DEFLATE64:
+        if compression == 'Deflate':
             v = 21
-        if compression == PKWARE_IMPLODING:
+        if compression == 'PKWARE Imploding':
             v = 25
         if uncompressed_size >= INT32_MAX:
             v = 45
-        if compression == BZIP:
+        if compression == 'BZIP2':
             v = 46
 
         bit_flag: list[str] = list('0000000000000000')
@@ -331,7 +335,7 @@ class NewZipFile(NewArchive):
         compression_method: int = ZIP_COMPRESSION_FROM_STR[compression]
         data = compress(compression_method, level, data)
 
-        if self._encryption != UNENCRYPTED:
+        if self._encryption != 'Unencrypted':
             bit_flag[0] = '1'
             data = encrypt(data, self._pwd, crc)
         if compression in (DEFLATE, DEFLATE64):
@@ -453,9 +457,6 @@ class NewZipFile(NewArchive):
         self._files[file.filename] = file
         self._cd_headers[file.filename] = cd_header
 
-        self._files = {k: v for k, v in sorted(self._files.items(), key=lambda item: item[0])}
-        self._cd_headers = {k: v for k, v in sorted(self._cd_headers.items(), key=lambda item: item[0])}
-
     def edit_file(
             self,
             path: str,
@@ -501,10 +502,11 @@ class NewZipFile(NewArchive):
             source: str | bytes | PathLike[str] | PathLike[bytes],
             path: str = '',
             /,
-            compression: str = STORED,
-            level: str = NORMAL,
+            compression: ZipCompressions = 'Stored',
+            level: ZipLevels = 'Normal',
             encoding: str = 'utf-8',
             comment: str = '',
+            *,
             use_mp: bool = False
     ) -> None:
 
@@ -519,7 +521,7 @@ class NewZipFile(NewArchive):
         if path != '':
             self.create_folder(path, encoding)
 
-        files: list[tuple[Path, str, str, str, str, str, str, Optional[str]]] = []
+        files: list[tuple[Path, str, ZipCompressions, ZipLevels, str, str, str, Optional[str]]] = []
     
         def get_all_files(current_root: Path) -> None:
             nonlocal files
@@ -532,7 +534,7 @@ class NewZipFile(NewArchive):
 
                 if file.is_dir():
                     files.append(
-                        (file, final_path + '/', STORED, NORMAL, 'utf-8', comment, self._encryption, self._pwd)
+                        (file, final_path + '/', 'Stored', 'Normal', 'utf-8', comment, self._encryption, self._pwd)
                     )
                     get_all_files(file)
                 else:
@@ -558,8 +560,6 @@ class NewZipFile(NewArchive):
                     self._files.update(result[0])
                     self._cd_headers.update(result[1])
                     self._sizeof_CD += result[2]
-            self._files = {k: v for k, v in sorted(self._files.items(), key=lambda item: item[0])}
-            self._cd_headers = {k: v for k, v in sorted(self._cd_headers.items(), key=lambda item: item[0])}
         else:
             for file in files:
                 self.add_file(*file[:-2])
@@ -588,8 +588,8 @@ class NewZipFile(NewArchive):
             new_path: str = '',
             /,
             pwd: Optional[str] = None,
-            compression: str = STORED,
-            level: str = NORMAL,
+            compression: ZipCompressions = 'Stored',
+            level: ZipLevels = 'Normal',
             encoding: str = 'utf-8',
             comment: str = ''
     ) -> None:
@@ -649,11 +649,11 @@ class NewZipFile(NewArchive):
     def _mp_add_file(
             source: str | bytes | PathLike[str] | PathLike[bytes],
             path: str,
-            compression: str,
-            level: str,
+            compression: ZipCompressions,
+            level: ZipLevels,
             encoding: str,
             comment: str,
-            encryption: str,
+            encryption: ZipEncryptions,
             pwd: Optional[str]
     ) -> tuple[dict[str, FileRaw], dict[str, CDHeader], int]:
         """Multiprocessing version of add_file method."""
@@ -703,10 +703,10 @@ class NewZipFile(NewArchive):
         compression_method: int = ZIP_COMPRESSION_FROM_STR[compression]
         data = compress(compression_method, level, data)
 
-        if encryption != UNENCRYPTED:
+        if encryption != 'Unencrypted':
             bit_flag[0] = '1'
             data = encrypt(data, pwd, crc)
-        if compression in (DEFLATE, DEFLATE64):
+        if compression in ('Deflate', 'Deflate64'):
             if level == FAST:
                 bit_flag[2] = '1'
             elif level == MAXIMUM:
@@ -812,17 +812,8 @@ class NewZipFile(NewArchive):
 
         return {file.filename: file}, {file.filename: cd_header}, len(cd_header.encode(encoding))
 
-
 class ZipFile(Archive):
-    """Class representing the zip file and its contents.
-
-    Attributes:
-        files: list of files stored in the zip file.
-        comment: file comment.
-        total_entries: number of entries in the zip file.
-        compression_method: compression method.
-            If files in the same archive use different compression algorythms, this value is set to 'Mixed'
-    """
+    """Class representing the zip file and its contents. Use one of the static methods to initialise it."""
 
     def __init__(
             self,
@@ -844,7 +835,7 @@ class ZipFile(Archive):
 
         files: list[File] = []
         CD_headers: list[CDHeader] = []
-        indirect: bool = False  # Binary stream is already initialised
+        indirect: bool = False
 
         if isinstance(f, (int, str, bytes, PathLike)):
             f = open(f, 'rb')
@@ -888,18 +879,17 @@ class ZipFile(Archive):
         return ZipFile(files, CD_headers, endof_cd, encoding)
 
     @staticmethod
-    def new(pwd: Optional[str] = None, encryption: str = UNENCRYPTED, encoding: str = 'utf-8') -> NewZipFile:
+    def new(pwd: Optional[str] = None, encryption: ZipEncryptions = 'Unencrypted', encoding: str = 'utf-8') -> NewZipFile:
         return NewZipFile(pwd, encoding, encryption)
 
-    def edit(self, pwd: Optional[str] = None, encryption: str = UNENCRYPTED) -> NewZipFile:
+    def edit(self, pwd: Optional[str] = None, encryption: ZipEncryptions = 'Unencrypted') -> NewZipFile:
         z = self.new(pwd, encryption, self.encoding)
         for file in self._files:
-            z.create_file(file.filename, file.contents, '.', file.compression_method, file.compression_level)
-
+            z.create_file(file.filename, file.contents, file.compression_method, file.compression_level)  # type: ignore # mypy: ignore-errors [This arguments can only be supported strings]
         return z
 
-    def set_password(self, pwd: str, encryption: str = ZIP_CRYPTO, encoding: str = 'utf-8') -> NewZipFile:
+    def set_password(self, pwd: str, encryption: ZipEncryptions = 'ZipCrypto', encoding: str = 'utf-8') -> NewZipFile:
         z = self.new(pwd, encryption, encoding)
         for file in self._files:
-            z.create_file(file.filename, file.contents, '.', file.compression_method, file.compression_level)
+            z.create_file(file.filename, file.contents, file.compression_method, file.compression_level)  # type: ignore # mypy: ignore-errors [This arguments can only be supported strings]
         return z
